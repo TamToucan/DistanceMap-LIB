@@ -9,7 +9,7 @@ file(GLOB_RECURSE DMAP_SOURCES CONFIGURE_DEPENDS
 # Define Shared Library
 add_library(${DMAP_LIB_NAME} SHARED ${DMAP_SOURCES})
 
-target_compile_definitions(${DMAP_LIB_NAME} PRIVATE GDDISTANCEMAP_EXPORTS)
+target_compile_definitions(${DMAP_LIB_NAME} PRIVATE DISTANCEMAP_EXPORTS)
 
 # Include Directories
 target_include_directories(${DMAP_LIB_NAME} PUBLIC

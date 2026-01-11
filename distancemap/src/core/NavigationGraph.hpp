@@ -1,14 +1,13 @@
 #ifndef NAVIGATION_GRAPH_HPP
 #define NAVIGATION_GRAPH_HPP
 
-#include "GDDistanceMapApi.h"
+#include "DistanceMapApi.h"
 #include "GridToGraph.hpp"
 #include "GridTypes.hpp"
 #include "Router.hpp"
 #include "SparseNavGraph.hpp"
 #include <tuple>
 #include <vector>
-
 
 namespace DistanceMap {
 namespace Routing {
@@ -20,7 +19,7 @@ namespace Routing {
 //   - ~150 lines vs 370+ lines in this file
 //   - Only requires infoGrid (no nodes/edges/zones)
 
-class GDDISTANCE_MAP_API NavigationGraph {
+class DISTANCEMAP_API NavigationGraph {
 public:
   NavigationGraph();
   ~NavigationGraph() = default;

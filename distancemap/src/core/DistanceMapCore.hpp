@@ -1,15 +1,14 @@
 #pragma once
+#include "DistanceMapApi.h"
 #include "DistanceMapNavigator.hpp"
-#include "GDDistanceMapApi.h"
 #include "GridTypes.hpp"
 #include "NavigationGraph.hpp"
 #include "Router.hpp"
 #include "WallDistanceGrid.hpp"
 #include <vector>
 
-
 namespace DistanceMap {
-class GDDISTANCE_MAP_API DistanceMapCore {
+class DISTANCEMAP_API DistanceMapCore {
 public:
   DistanceMapCore() = default;
   ~DistanceMapCore() = default;

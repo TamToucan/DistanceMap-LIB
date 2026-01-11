@@ -6,12 +6,10 @@
 #include <utility>
 #include <vector>
 
-
+#include "DistanceMapApi.h"
 #include "FlowField.hpp"
-#include "GDDistanceMapApi.h"
 #include "GridTypes.hpp"
 #include "Routing.hpp"
-
 
 //
 // Take the 2D grid of EMPTY/PATH (i.e. 1 = floor, 0 = wall) and
@@ -73,9 +71,9 @@
 namespace DistanceMap {
 namespace GridToGraph {
 
-GDDISTANCE_MAP_API std::vector<std::vector<int>>
+DISTANCEMAP_API std::vector<std::vector<int>>
 gridToFloorGrid(const std::vector<std::vector<int>> &grid);
-GDDISTANCE_MAP_API std::vector<std::vector<int>>
+DISTANCEMAP_API std::vector<std::vector<int>>
 readGridFromFile(const std::string &filename);
 
 using namespace GridType;
@@ -126,7 +124,7 @@ struct Graph {
 //
 // Floor must = PATH on input i.e. walkable, WALLS = EMPTY
 //
-GDDISTANCE_MAP_API Graph makeGraph(const GridType::Grid &floorGrid);
+DISTANCEMAP_API Graph makeGraph(const GridType::Grid &floorGrid);
 
 } // namespace GridToGraph
 } // namespace DistanceMap
