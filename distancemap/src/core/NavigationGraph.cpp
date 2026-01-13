@@ -500,19 +500,19 @@ GridType::Point NavigationGraph::getNextMove(Router::RouteCtx *ctx,
 float NavigationGraph::getMoveDirection(Router::RouteCtx *ctx,
                                         GridType::Vec2 from, GridType::Vec2 to,
                                         int type) {
+  SET_DEBUG("ALL");
   GridType::Point fromPnt = {from.x / (m_info.mCellWidth * 8),
                              from.y / (m_info.mCellHeight * 8)};
   GridType::Point toPnt = {to.x / (m_info.mCellWidth * 8),
                            to.y / (m_info.mCellHeight * 8)};
-  LOG_DEBUG("---GETANGLE: " << from.x << "," << to.x << "  cell: "
-                            << m_info.mCellWidth << "x" << m_info.mCellHeight
-                            << " => " << fromPnt.first << "," << fromPnt.second
-                            << " to:" << toPnt.first << "," << toPnt.second);
+  LOG_DEBUG("---GETANGLE: from:"
+            << from.x << "," << from.y << " to:" << to.x << "," << to.y
+            << "  cell: " << m_info.mCellWidth << "x" << m_info.mCellHeight
+            << " => " << fromPnt.first << "," << fromPnt.second
+            << " to:" << toPnt.first << "," << toPnt.second);
 
-  LOG_DEBUG("------FROM:" << from.x << "," << from.y << " TO " << to.x << ","
-                          << to.y << "    " << fromPnt.first << ","
-                          << fromPnt.second << " TO " << toPnt.first << ","
-                          << toPnt.second);
+  LOG_DEBUG("---------------to:" << to.x << "," << to.y << " => " << toPnt.first
+                                 << "," << toPnt.second);
   LOG_DEBUG("      CTX: F: "
             << ctx->from.first << "," << ctx->from.second
             << " CtxTo: " << ctx->to.first << "," << ctx->to.second
