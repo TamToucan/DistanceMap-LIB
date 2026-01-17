@@ -1,8 +1,11 @@
 #include "SparseNavGraph.hpp"
-#include "Debug.h"
-#include "Router.hpp"
+
 #include <algorithm>
 #include <queue>
+
+#include "Debug.h"
+#include "Router.hpp"
+
 
 namespace DistanceMap {
 namespace Routing {
@@ -10,8 +13,8 @@ namespace Routing {
 SparseNavGraph::SparseNavGraph() {}
 
 int SparseNavGraph::getEdgeFromNodes(int n1, int n2) const {
-  const auto &connections = forwardConnections[n1];
-  for (const auto &nodeEdge : connections) {
+  const auto& connections = forwardConnections[n1];
+  for (const auto& nodeEdge : connections) {
     if (nodeEdge.first == n2) {
       return nodeEdge.second;
     }
@@ -30,14 +33,14 @@ int SparseNavGraph::getNodeZone(int nodeIdx) const {
              : (nodeIdx < nodeToZone.size() ? nodeToZone[nodeIdx] : -1);
 }
 
-const std::vector<int> &SparseNavGraph::getZoneNodes(int zoneId) const {
+const std::vector<int>& SparseNavGraph::getZoneNodes(int zoneId) const {
   static const std::vector<int> empty;
   return zoneToNodes.empty() || zoneId >= zoneToNodes.size()
              ? empty
              : zoneToNodes[zoneId];
 }
 
-const std::vector<int> &SparseNavGraph::getZoneEdges(int zoneId) const {
+const std::vector<int>& SparseNavGraph::getZoneEdges(int zoneId) const {
   static const std::vector<int> empty;
   return zoneToEdges.empty() || zoneId >= zoneToEdges.size()
              ? empty
@@ -51,7 +54,7 @@ struct SearchState {
   int cost;
   int heuristic;
 
-  bool operator>(const SearchState &other) const {
+  bool operator>(const SearchState& other) const {
     return (cost + heuristic) > (other.cost + other.heuristic);
   }
 };
@@ -59,8 +62,8 @@ struct SearchState {
 std::vector<int> SparseNavGraph::bidirectionalAStarFlexible(
     std::optional<int> sourceNodeIdx, std::optional<int> sourceEdgeIdx,
     std::optional<int> targetNodeIdx, std::optional<int> targetEdgeIdx,
-    const std::unordered_set<int> &allowedEdges,
-    const std::unordered_set<int> &allowedNodes) const {
+    const std::unordered_set<int>& allowedEdges,
+    const std::unordered_set<int>& allowedNodes) const {
   // Heuristic function
   auto heuristic = [&](int node, bool isForward) {
     if (isForward) {
@@ -70,7 +73,7 @@ std::vector<int> SparseNavGraph::bidirectionalAStarFlexible(
                std::abs(nodePoints[node].second -
                         nodePoints[*targetNodeIdx].second);
       } else if (targetEdgeIdx.has_value()) {
-        const auto &[tgtFrom, tgtTo] = edgeFromTos[*targetEdgeIdx];
+        const auto& [tgtFrom, tgtTo] = edgeFromTos[*targetEdgeIdx];
         auto fromDst =
             std::abs(nodePoints[node].first - nodePoints[tgtFrom].first) +
             std::abs(nodePoints[node].second - nodePoints[tgtFrom].second);
@@ -89,7 +92,7 @@ std::vector<int> SparseNavGraph::bidirectionalAStarFlexible(
                std::abs(nodePoints[node].second -
                         nodePoints[*sourceNodeIdx].second);
       } else if (sourceEdgeIdx.has_value()) {
-        const auto &[srcFrom, srcTo] = edgeFromTos[*sourceEdgeIdx];
+        const auto& [srcFrom, srcTo] = edgeFromTos[*sourceEdgeIdx];
         auto fromDst =
             std::abs(nodePoints[node].first - nodePoints[srcFrom].first) +
             std::abs(nodePoints[node].second - nodePoints[srcFrom].second);
@@ -105,22 +108,22 @@ std::vector<int> SparseNavGraph::bidirectionalAStarFlexible(
     return 0;
   };
 
-  auto seedForward = [&](auto &q, auto &h) {
+  auto seedForward = [&](auto& q, auto& h) {
     if (sourceNodeIdx.has_value()) {
       q.push({*sourceNodeIdx, -1, 0, h(*sourceNodeIdx, true)});
     } else if (sourceEdgeIdx.has_value()) {
-      const auto &[srcFrom, srcTo] = edgeFromTos[*sourceEdgeIdx];
+      const auto& [srcFrom, srcTo] = edgeFromTos[*sourceEdgeIdx];
       q.push({srcFrom, -1, 0, h(srcFrom, true)});
       if (srcTo != -1)
         q.push({srcTo, -1, 0, h(srcTo, true)});
     }
   };
 
-  auto seedBackward = [&](auto &q, auto &h) {
+  auto seedBackward = [&](auto& q, auto& h) {
     if (targetNodeIdx.has_value()) {
       q.push({*targetNodeIdx, -1, 0, h(*targetNodeIdx, false)});
     } else if (targetEdgeIdx.has_value()) {
-      const auto &[tgtFrom, tgtTo] = edgeFromTos[*targetEdgeIdx];
+      const auto& [tgtFrom, tgtTo] = edgeFromTos[*targetEdgeIdx];
       q.push({tgtFrom, -1, 0, h(tgtFrom, false)});
       if (tgtTo != -1)
         q.push({tgtTo, -1, 0, h(tgtTo, false)});
@@ -154,7 +157,7 @@ std::vector<int> SparseNavGraph::bidirectionalAStarFlexible(
     LOG_DEBUG("AStar:  SRC fwdCost src:" << *sourceNodeIdx << "= 0");
     forwardCost[*sourceNodeIdx] = 0;
   } else if (sourceEdgeIdx.has_value()) {
-    const auto &[srcFrom, srcTo] = edgeFromTos[*sourceEdgeIdx];
+    const auto& [srcFrom, srcTo] = edgeFromTos[*sourceEdgeIdx];
     LOG_DEBUG("AStar:  SRCfrom fwdCost (" << srcFrom << "->" << srcTo
                                           << ")= 0");
     forwardCost[srcFrom] = 0;
@@ -166,7 +169,7 @@ std::vector<int> SparseNavGraph::bidirectionalAStarFlexible(
     LOG_DEBUG("AStar:  TGT bwdCost tgt:" << *targetNodeIdx << "= 0");
     backwardCost[*targetNodeIdx] = 0;
   } else if (targetEdgeIdx.has_value()) {
-    const auto &[tgtFrom, tgtTo] = edgeFromTos[*targetEdgeIdx];
+    const auto& [tgtFrom, tgtTo] = edgeFromTos[*targetEdgeIdx];
     LOG_DEBUG("AStar:  TGTbwdCost (" << tgtFrom << "->" << tgtTo << ")= 0");
     backwardCost[tgtFrom] = 0;
     if (tgtTo != -1)
@@ -197,7 +200,7 @@ std::vector<int> SparseNavGraph::bidirectionalAStarFlexible(
       }
 
       // Expand neighbors
-      for (const auto &[neighbor, edgeIdx] : forwardConnections[current.node]) {
+      for (const auto& [neighbor, edgeIdx] : forwardConnections[current.node]) {
         // Check if edge and node are allowed
         if (!allowedEdges.empty() && !allowedEdges.count(edgeIdx))
           continue;
@@ -234,7 +237,7 @@ std::vector<int> SparseNavGraph::bidirectionalAStarFlexible(
       }
 
       // Expand neighbors in reverse direction
-      for (const auto &[neighbor, edgeIdx] : reverseConnections[current.node]) {
+      for (const auto& [neighbor, edgeIdx] : reverseConnections[current.node]) {
         if (!allowedEdges.empty() && !allowedEdges.count(edgeIdx))
           continue;
         if (!allowedNodes.empty() && !allowedNodes.count(neighbor))
@@ -298,7 +301,7 @@ std::vector<int> SparseNavGraph::bidirectionalAStarFlexible(
 }
 
 std::vector<int>
-SparseNavGraph::convertEdgesToNodePath(const std::vector<int> &edgePath,
+SparseNavGraph::convertEdgesToNodePath(const std::vector<int>& edgePath,
                                        std::optional<int> sourceEdgeIdx,
                                        std::optional<int> sourceNodeIdx) const {
   std::vector<int> nodePath;
@@ -354,8 +357,8 @@ SparseNavGraph::convertEdgesToNodePath(const std::vector<int> &edgePath,
 }
 
 std::vector<int> SparseNavGraph::findZoneNodeToNodePath(
-    Router::RouteCtx *ctx, const std::vector<int> &zoneBases,
-    const std::vector<int> &zoneEdges, int sourceNodeIdx,
+    Router::RouteCtx* ctx, const std::vector<int>& zoneBases,
+    const std::vector<int>& zoneEdges, int sourceNodeIdx,
     int targetNodeIdx) const {
   if (ctx->lastRouteType == Router::RouteCtx::RouteType::NodeToNode &&
       ctx->routeSrcNodeIdx == sourceNodeIdx &&
@@ -380,8 +383,8 @@ std::vector<int> SparseNavGraph::findZoneNodeToNodePath(
 }
 
 std::vector<int> SparseNavGraph::findZoneEdgeToNodePath(
-    Router::RouteCtx *ctx, const std::vector<int> &zoneBases,
-    const std::vector<int> &zoneEdges, int sourceEdgeIdx,
+    Router::RouteCtx* ctx, const std::vector<int>& zoneBases,
+    const std::vector<int>& zoneEdges, int sourceEdgeIdx,
     int targetNodeIdx) const {
   LOG_DEBUG("FZe2np: bases: "
             << zoneBases.size() << " edges: " << zoneEdges.size()
@@ -412,8 +415,8 @@ std::vector<int> SparseNavGraph::findZoneEdgeToNodePath(
 }
 
 std::vector<int> SparseNavGraph::findRouteWithAllowedSets(
-    Router::RouteCtx *ctx, const std::vector<int> &allowedNodes,
-    const std::vector<int> &allowedEdges, std::optional<int> sourceNodeIdx,
+    Router::RouteCtx* ctx, const std::vector<int>& allowedNodes,
+    const std::vector<int>& allowedEdges, std::optional<int> sourceNodeIdx,
     std::optional<int> sourceEdgeIdx, int targetNodeIdx) const {
   std::unordered_set<int> allowedNodesSet(allowedNodes.begin(),
                                           allowedNodes.end());
@@ -432,7 +435,7 @@ std::vector<int> SparseNavGraph::findRouteWithAllowedSets(
 }
 
 std::vector<int>
-SparseNavGraph::findZonePathBFS(const std::vector<GridType::ZoneInfo> &zones,
+SparseNavGraph::findZonePathBFS(const std::vector<GridType::ZoneInfo>& zones,
                                 int sourceZoneId, int targetZoneId) {
   if (sourceZoneId == targetZoneId)
     return {sourceZoneId};
@@ -468,19 +471,19 @@ SparseNavGraph::findZonePathBFS(const std::vector<GridType::ZoneInfo> &zones,
     }
   }
 
-  return {}; // No path found
+  return {};  // No path found
 }
 
 std::vector<int> SparseNavGraph::findRoute(
-    Router::RouteCtx *ctx, const std::vector<GridType::ZoneInfo> &zones,
-    const std::vector<GridType::AbstractEdge> &abstractEdges,
+    Router::RouteCtx* ctx, const std::vector<GridType::ZoneInfo>& zones,
+    const std::vector<GridType::AbstractEdge>& abstractEdges,
     std::optional<int> sourceNodeIdx, std::optional<int> sourceEdgeIdx,
     int targetNodeIdx, int sourceZoneId, int targetZoneId,
     int zoneRelationship) const {
   // Case 1: Same zone
   if (zoneRelationship == -1) {
     LOG_DEBUG("FR: Same srcZone: " << sourceZoneId);
-    const auto &zone = zones[sourceZoneId];
+    const auto& zone = zones[sourceZoneId];
 
     if (sourceNodeIdx.has_value()) {
       LOG_DEBUG("FR:   Find NodeToPath");
@@ -497,8 +500,8 @@ std::vector<int> SparseNavGraph::findRoute(
   if (zoneRelationship >= 0) {
     LOG_DEBUG("FR: Adjacent srcZ: " << sourceZoneId
                                     << " tgtZ:: " << targetZoneId);
-    const auto &sourceZone = zones[sourceZoneId];
-    const auto &targetZone = zones[targetZoneId];
+    const auto& sourceZone = zones[sourceZoneId];
+    const auto& targetZone = zones[targetZoneId];
 
     // Combine both zones
     std::vector<int> allowedNodes = sourceZone.baseNodeIdxs;
@@ -529,7 +532,7 @@ std::vector<int> SparseNavGraph::findRoute(
   std::vector<int> allowedNodes, allowedEdges;
   LOG_DEBUG("FR: Make sets for " << zonePath.size() << " zones");
   for (int zoneId : zonePath) {
-    const auto &zone = zones[zoneId];
+    const auto& zone = zones[zoneId];
     LOG_DEBUG("  Add zone: " << zoneId << " nodes: " << zone.baseNodeIdxs.size()
                              << " edges: " << zone.baseEdgeIdxs.size());
     LOG_DEBUG_CONT("      nodes: ");
@@ -553,7 +556,7 @@ std::vector<int> SparseNavGraph::findRoute(
 
 MathStuff::Grid2D<uint32_t>
 makeEdgeGrid(const std::vector<GridType::Edge> edges,
-             const GridType::Grid &grid) {
+             const GridType::Grid& grid) {
   const int rows = grid.size();
   const int cols = grid[0].size();
   MathStuff::Grid2D<uint32_t> result(cols, rows, -1);
@@ -562,7 +565,7 @@ makeEdgeGrid(const std::vector<GridType::Edge> edges,
   // Multi-source BFS setup
   std::queue<std::tuple<GridType::Point, uint32_t, int>> q;
   for (int idx = 0; idx < edges.size(); ++idx) {
-    const auto &edge = edges.at(idx);
+    const auto& edge = edges.at(idx);
 
     int half = 0;
     int halfCount = edge.path.size() / 2;
@@ -584,7 +587,7 @@ makeEdgeGrid(const std::vector<GridType::Edge> edges,
 
     ++d;
     int dist = v >> 16;
-    for (const auto &dir : GridType::directions8) {
+    for (const auto& dir : GridType::directions8) {
       GridType::Point next = {pos.first + dir.first, pos.second + dir.second};
       if (grid[next.second][next.first] &
           (GridType::WALL | GridType::NODE | GridType::EDGE))
@@ -608,10 +611,10 @@ makeEdgeGrid(const std::vector<GridType::Edge> edges,
   return result;
 }
 
-SparseNavGraph buildSparseGraph(const std::vector<GridType::Point> &baseNodes,
-                                const std::vector<GridType::Point> &deadEnds,
-                                const std::vector<GridType::Edge> &baseEdges,
-                                const GridType::Grid &infoGrid) {
+SparseNavGraph buildSparseGraph(const std::vector<GridType::Point>& baseNodes,
+                                const std::vector<GridType::Point>& deadEnds,
+                                const std::vector<GridType::Edge>& baseEdges,
+                                const GridType::Grid& infoGrid) {
   SparseNavGraph g;
   const int numNodes = baseNodes.size();
 
@@ -624,7 +627,7 @@ SparseNavGraph buildSparseGraph(const std::vector<GridType::Point> &baseNodes,
   g.nodePoints = baseNodes;
 
   for (size_t i = 0; i < baseEdges.size(); ++i) {
-    const GridType::Edge &e = baseEdges[i];
+    const GridType::Edge& e = baseEdges[i];
     g.edgeCosts.push_back(e.toDeadEnd ? 0xffff : e.path.size());
     g.edgeFromTos.emplace_back(e.from, e.toDeadEnd ? -1 : e.to);
 
@@ -645,5 +648,5 @@ SparseNavGraph buildSparseGraph(const std::vector<GridType::Point> &baseNodes,
   return g;
 }
 
-} // namespace Routing
-} // namespace DistanceMap
+}  // namespace Routing
+}  // namespace DistanceMap

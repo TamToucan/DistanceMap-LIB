@@ -1,13 +1,13 @@
 #ifndef NAVIGATION_GRAPH_HPP
 #define NAVIGATION_GRAPH_HPP
 
+#include <vector>
+
 #include "DistanceMapApi.h"
 #include "GridToGraph.hpp"
 #include "GridTypes.hpp"
 #include "Router.hpp"
 #include "SparseNavGraph.hpp"
-#include <tuple>
-#include <vector>
 
 namespace DistanceMap {
 namespace Routing {
@@ -20,18 +20,24 @@ namespace Routing {
 //   - Only requires infoGrid (no nodes/edges/zones)
 
 class DISTANCEMAP_API NavigationGraph {
-public:
+ public:
   NavigationGraph();
   ~NavigationGraph() = default;
 
-  void initialize(const GridToGraph::Graph &graphData,
-                  const Router::Info &info);
+  void initialize(const GridToGraph::Graph& graphData,
+                  const Router::Info& info);
 
   // Main entry point for movement
-  float getMoveDirection(Router::RouteCtx *ctx, GridType::Vec2 from,
+  float getMoveDirection(Router::RouteCtx* ctx, GridType::Vec2 from,
                          GridType::Vec2 to, int type);
 
-private:
+  // Checks if a world position is valid (not inside a wall)
+  bool validateMove(const GridType::Vec2& pos);
+
+  // Calculates new position with wall sliding
+  GridType::Vec2 resolveMove(const GridType::Vec2& currentPos, float angle, float distance);
+
+ private:
   // Data members from GridToGraph::Graph
   GridType::Grid m_infoGrid;
   GridToGraph::BaseGraph m_baseGraph;
@@ -45,17 +51,25 @@ private:
   Router::Info m_info;
 
   // Helpers
-  GridType::Point getNextMove(Router::RouteCtx *ctx, GridType::Point source,
+  struct ClosestNodeInfo {
+    int nodeIdx;
+    int edgeOrDeadEndIdx;
+    bool isEdge;
+    GridType::Point closestGraphPoint;
+  };
+
+  GridType::Point getNextMove(Router::RouteCtx* ctx, GridType::Point source,
                               GridType::Point target);
-  std::tuple<int, int, bool> getClosestNode(const GridType::Point &pos);
-  GridType::Point nextStep(const GridType::Point &from,
-                           const GridType::Point &to);
-  GridType::Point nextPoint(const GridType::Point &from,
-                            const GridType::Point &dir);
+  ClosestNodeInfo getClosestNode(const GridType::Point& pos);
+
+  GridType::Point nextStep(const GridType::Point& from,
+                           const GridType::Point& to);
+  GridType::Point nextPoint(const GridType::Point& from,
+                            const GridType::Point& dir);
   float computeAngle(double dx, double dy);
 };
 
-} // namespace Routing
-} // namespace DistanceMap
+}  // namespace Routing
+}  // namespace DistanceMap
 
 #endif
