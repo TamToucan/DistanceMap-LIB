@@ -19,7 +19,7 @@ target_include_directories(${DMAP_LIB_NAME} PUBLIC
     "${CMAKE_BINARY_DIR}/_deps/libs-src/lib/MathStuff"
     "${CMAKE_BINARY_DIR}/_deps/libs-src/lib/Algo"
     "${CMAKE_BINARY_DIR}/_deps/libs-src/lib/Util"
-    "${CMAKE_BINARY_DIR}/_deps/libs-src/lib/Stuff"  # <--- ADDED THIS LINE
+    "${CMAKE_BINARY_DIR}/_deps/libs-src/lib/Stuff"
 )
 
 # Properties
