@@ -1,3 +1,5 @@
+#include "GridToGraph.hpp"
+
 #include <algorithm>
 #include <cmath>
 #include <deque>
@@ -7,20 +9,17 @@
 #include <queue>
 #include <set>
 #include <stdexcept>
+#include <string>
 #include <tuple>
 #include <unordered_map>
 #include <utility>
 #include <vector>
 
-#include "GridToGraph.hpp"
-
-#include <string>
-
 #include "AbstractMST.hpp"
-#include "ZSThinning.hpp"
-
 #include "Debug.h"
 #include "TGA.hpp"
+#include "ZSThinning.hpp"
+
 
 namespace DistanceMap {
 
@@ -37,7 +36,7 @@ using Pattern = std::vector<std::vector<int>>;
 
 // Define all patterns for nodes(middle point is the node)
 //
-const std::vector<Pattern> &getBasePatterns() {
+const std::vector<Pattern>& getBasePatterns() {
   static std::vector<Pattern> patterns;
 
   if (patterns.size() != 0) {
@@ -229,7 +228,7 @@ const std::vector<Pattern> &getBasePatterns() {
 
 // Mirror the 3x3 pattern
 //
-Pattern mirrorPattern(const Pattern &pattern) {
+Pattern mirrorPattern(const Pattern& pattern) {
   Pattern mirrored(3, std::vector<int>(3, 0));
   for (int i = 0; i < 3; ++i) {
     mirrored[i][0] = pattern[i][2];
@@ -241,17 +240,17 @@ Pattern mirrorPattern(const Pattern &pattern) {
 
 // Rotate the 3x3 pattern
 //
-Pattern rotatePattern(const Pattern &pattern) {
+Pattern rotatePattern(const Pattern& pattern) {
   Pattern rotated(3, std::vector<int>(3, 0));
   for (int i = 0; i < 3; ++i) {
     for (int j = 0; j < 3; ++j) {
-      rotated[j][(3 - 1) - i] = pattern[i][j]; // Rotate clockwise
+      rotated[j][(3 - 1) - i] = pattern[i][j];  // Rotate clockwise
     }
   }
   return rotated;
 }
 
-int makeID(const Pattern &pattern) {
+int makeID(const Pattern& pattern) {
   int id = 0;
   int bit = 0x01;
   for (int i = 0; i < 3; ++i) {
@@ -268,7 +267,7 @@ int makeID(const Pattern &pattern) {
 // Use the 9 (3x3) bits (bit0 = top left) to created pattern ID
 // NOTE: This is called with the Grid and Patterns
 //
-int getPatternID(const Grid &grid, int x, int y) {
+int getPatternID(const Grid& grid, int x, int y) {
   int id = 0;
   int bit = 0x01;
   for (int i = 0; i < 3; ++i) {
@@ -286,7 +285,7 @@ int getPatternID(const Grid &grid, int x, int y) {
 // (some patterns are symmetrical so rotated and/or mirrored
 // wont need added since they generate same ID since same pattern
 //
-bool addPatternID(const Pattern &p, std::vector<int> &ids) {
+bool addPatternID(const Pattern& p, std::vector<int>& ids) {
   int id = makeID(p);
   // Return true if first time ever stored id
   bool ret = (ids[id] == 0);
@@ -300,14 +299,14 @@ bool addPatternID(const Pattern &p, std::vector<int> &ids) {
 // The returned array contains all bit patterbs (using the 9 (3x3) bits)
 // of patterns that the middle of 3x3 is a node
 //
-const std::vector<int> &getAllPatterns() {
+const std::vector<int>& getAllPatterns() {
   static std::vector<Pattern> allPatterns;
   static std::vector<int> patternIDs(1 << 3 * 3, 0);
   static bool madePatterns = false;
 
   if (!madePatterns) {
     for (bool mirror : {false, true}) {
-      for (const auto &pattern : getBasePatterns()) {
+      for (const auto& pattern : getBasePatterns()) {
         Pattern current = mirror ? mirrorPattern(pattern) : pattern;
         for (int r = 0; r < 3; ++r) {
           if (addPatternID(current, patternIDs)) {
@@ -329,7 +328,7 @@ const std::vector<int> &getAllPatterns() {
 // The is only used by Deadend detection and only will only return 1 if
 // all EMPTY and 1 PATH since PATH==1 and EMPTY==0 and all others > 1.
 //
-inline int countNeighbors(const Grid &grid, int x, int y) {
+inline int countNeighbors(const Grid& grid, int x, int y) {
   return grid[y - 1][x - 1] + grid[y - 1][x] + grid[y - 1][x + 1]
 
          + grid[y][x - 1] + grid[y][x + 1]
@@ -337,7 +336,7 @@ inline int countNeighbors(const Grid &grid, int x, int y) {
          + grid[y + 1][x - 1] + grid[y + 1][x] + grid[y + 1][x + 1];
 }
 
-} // namespace
+}  // namespace
 
 ////////////////////////////////////////////////////////////////////////////////////////
 
@@ -355,34 +354,34 @@ inline bool isPath(int cellValue) {
 }
 
 #ifdef NO_DEBUG
-void writeFloorGridToFile(const std::vector<std::vector<int>> &grid,
-                          const std::string &filename) {}
-void debugDump(const Graph &graph) {}
-void debugGridEdges(const Graph &graphs) {}
-void debugAbstractNodes(int pass, const AbstractLevel &ablv,
-                        const Graph &graph) {}
-void debugAbstractEdges(int pass, const AbstractLevel &ablv, const Graph &graph,
-                        const char *fname) {}
-void debugZones(int pass, const AbstractLevel &ablv, const Graph &graph) {}
-void debugZoneEdges(int pass, const AbstractLevel &ablv, const Graph &graph) {}
-void debugZoneBoundaries(int pass, const AbstractLevel &ablv) {}
-void debugExpandedPaths(const Grid &grid) {}
+void writeFloorGridToFile(const std::vector<std::vector<int>>& grid,
+                          const std::string& filename) {}
+void debugDump(const Graph& graph) {}
+void debugGridEdges(const Graph& graphs) {}
+void debugAbstractNodes(int pass, const AbstractLevel& ablv,
+                        const Graph& graph) {}
+void debugAbstractEdges(int pass, const AbstractLevel& ablv, const Graph& graph,
+                        const char* fname) {}
+void debugZones(int pass, const AbstractLevel& ablv, const Graph& graph) {}
+void debugZoneEdges(int pass, const AbstractLevel& ablv, const Graph& graph) {}
+void debugZoneBoundaries(int pass, const AbstractLevel& ablv) {}
+void debugExpandedPaths(const Grid& grid) {}
 #else
-void writeFloorGridToFile(const std::vector<std::vector<int>> &grid,
-                          const std::string &filename);
-void debugDump(const Graph &graph);
-void debugGridEdges(const Graph &graphs);
-void debugAbstractNodes(int pass, const AbstractLevel &ablv,
-                        const Graph &graph);
-void debugAbstractEdges(int pass, const AbstractLevel &ablv, const Graph &graph,
-                        const char *fname);
-void debugZones(int pass, const AbstractLevel &ablv, const Graph &graph);
-void debugZoneEdges(int pass, const AbstractLevel &ablv, const Graph &graph);
-void debugZoneBoundaries(int pass, const AbstractLevel &ablv);
-void debugExpandedPaths(const Grid &grid);
+void writeFloorGridToFile(const std::vector<std::vector<int>>& grid,
+                          const std::string& filename);
+void debugDump(const Graph& graph);
+void debugGridEdges(const Graph& graphs);
+void debugAbstractNodes(int pass, const AbstractLevel& ablv,
+                        const Graph& graph);
+void debugAbstractEdges(int pass, const AbstractLevel& ablv, const Graph& graph,
+                        const char* fname);
+void debugZones(int pass, const AbstractLevel& ablv, const Graph& graph);
+void debugZoneEdges(int pass, const AbstractLevel& ablv, const Graph& graph);
+void debugZoneBoundaries(int pass, const AbstractLevel& ablv);
+void debugExpandedPaths(const Grid& grid);
 #endif
 
-void extraThining(Grid &grid) {
+void extraThining(Grid& grid) {
   // Idea was to change non-thinned
   // ###
   // # #
@@ -411,7 +410,7 @@ void extraThining(Grid &grid) {
 }
 ///////////////////////////////////////////////////////////
 
-std::vector<Point> detectDeadEnds(const Grid &grid) {
+std::vector<Point> detectDeadEnds(const Grid& grid) {
   std::vector<std::pair<int, int>> deadEnds;
 
   for (int y = 1; y < grid.size() - 1; ++y) {
@@ -426,9 +425,9 @@ std::vector<Point> detectDeadEnds(const Grid &grid) {
   return deadEnds;
 }
 
-std::vector<Point> detectNodes(const Grid &grid) {
+std::vector<Point> detectNodes(const Grid& grid) {
   std::vector<std::pair<int, int>> nodes;
-  const auto &patternIDS = getAllPatterns();
+  const auto& patternIDS = getAllPatterns();
   for (int y = 0; y < grid.size() - 2; ++y) {
     for (int x = 0; x < grid[0].size() - 2; ++x) {
       // Check that the middle of the 3x3 to be checked is set
@@ -452,98 +451,98 @@ std::vector<Point> detectNodes(const Grid &grid) {
 
 namespace {
 #ifndef NO_DEBUG
-void makeTGA2(const char *name, const Grid &grid, unsigned int mask) {
-  unsigned char *pPixel = new unsigned char[grid.size() * grid[0].size() * 4];
-  unsigned char *pData = pPixel;
+void makeTGA2(const char* name, const Grid& grid, unsigned int mask) {
+  unsigned char* pPixel = new unsigned char[grid.size() * grid[0].size() * 4];
+  unsigned char* pData = pPixel;
   for (int y = grid.size() - 1; y >= 0; --y) {
     int x = 0;
     for (int xy : grid[y]) {
       xy &= mask;
       switch (xy) {
-      case GridToGraph::NODE:
-        *pData++ = 0xff;
-        *pData++ = 0xff;
-        *pData++ = 0x00;
-        *pData++ = 0xff;
-        break;
-      case GridToGraph::DEND:
-        *pData++ = 0xff;
-        *pData++ = 0x00;
-        *pData++ = 0x00;
-        *pData++ = 0xff;
-        break;
-      case (GridToGraph::XPND << 1):
-        *pData++ = 0x00;
-        *pData++ = 0xff;
-        *pData++ = 0xff;
-        *pData++ = 0xff;
-        break;
-      case (GridToGraph::XPND << 2):
-        *pData++ = 0xff;
-        *pData++ = 0x00;
-        *pData++ = 0xff;
-        *pData++ = 0xff;
-        break;
-      case (GridToGraph::XPND << 3):
-        *pData++ = 0x7f;
-        *pData++ = 0x00;
-        *pData++ = 0xff;
-        *pData++ = 0xff;
-        break;
-      case (GridToGraph::XPND << 2 | (XPND << 1)):
-        *pData++ = 0x00;
-        *pData++ = 0x7f;
-        *pData++ = 0xff;
-        *pData++ = 0xff;
-        break;
-      case (GridToGraph::XPND << 3 | (XPND << 1)):
-        *pData++ = 0x7f;
-        *pData++ = 0x00;
-        *pData++ = 0x7f;
-        *pData++ = 0xff;
-        break;
-      case (GridToGraph::XPND << 3 | (XPND << 2)):
-        *pData++ = 0x7f;
-        *pData++ = 0x00;
-        *pData++ = 0x00;
-        *pData++ = 0xff;
-        break;
-      case (GridToGraph::XPND << 3 | (XPND << 2) | (XPND << 1)):
-        *pData++ = 0x7f;
-        *pData++ = 0x7f;
-        *pData++ = 0x7f;
-        *pData++ = 0xff;
-        break;
-      case 0xff:
-        *pData++ = 0x00;
-        *pData++ = 0x00;
-        *pData++ = 0x00;
-        *pData++ = 0x00;
-        break;
-      case GridToGraph::WALL:
-        *pData++ = 0x00;
-        *pData++ = 0x6f;
-        *pData++ = 0x00;
-        *pData++ = 0xff;
-        break;
-      case GridToGraph::XPND:
-        *pData++ = 0x4f;
-        *pData++ = 0x4f;
-        *pData++ = 0x4f;
-        *pData++ = 0xff;
-        break;
-      case GridToGraph::BOUNDARY | GridToGraph::WALL:
-        *pData++ = 0x00;
-        *pData++ = 0xff;
-        *pData++ = 0x00;
-        *pData++ = 0xff;
-        break;
-      default:
-        *pData++ = xy ? 0xff : 0x00;
-        *pData++ = xy ? 0xff : 0x00;
-        *pData++ = xy ? 0xff : 0x00;
-        *pData++ = xy ? 0xff : 0x00;
-        break;
+        case GridToGraph::NODE:
+          *pData++ = 0xff;
+          *pData++ = 0xff;
+          *pData++ = 0x00;
+          *pData++ = 0xff;
+          break;
+        case GridToGraph::DEND:
+          *pData++ = 0xff;
+          *pData++ = 0x00;
+          *pData++ = 0x00;
+          *pData++ = 0xff;
+          break;
+        case (GridToGraph::XPND << 1):
+          *pData++ = 0x00;
+          *pData++ = 0xff;
+          *pData++ = 0xff;
+          *pData++ = 0xff;
+          break;
+        case (GridToGraph::XPND << 2):
+          *pData++ = 0xff;
+          *pData++ = 0x00;
+          *pData++ = 0xff;
+          *pData++ = 0xff;
+          break;
+        case (GridToGraph::XPND << 3):
+          *pData++ = 0x7f;
+          *pData++ = 0x00;
+          *pData++ = 0xff;
+          *pData++ = 0xff;
+          break;
+        case (GridToGraph::XPND << 2 | (XPND << 1)):
+          *pData++ = 0x00;
+          *pData++ = 0x7f;
+          *pData++ = 0xff;
+          *pData++ = 0xff;
+          break;
+        case (GridToGraph::XPND << 3 | (XPND << 1)):
+          *pData++ = 0x7f;
+          *pData++ = 0x00;
+          *pData++ = 0x7f;
+          *pData++ = 0xff;
+          break;
+        case (GridToGraph::XPND << 3 | (XPND << 2)):
+          *pData++ = 0x7f;
+          *pData++ = 0x00;
+          *pData++ = 0x00;
+          *pData++ = 0xff;
+          break;
+        case (GridToGraph::XPND << 3 | (XPND << 2) | (XPND << 1)):
+          *pData++ = 0x7f;
+          *pData++ = 0x7f;
+          *pData++ = 0x7f;
+          *pData++ = 0xff;
+          break;
+        case 0xff:
+          *pData++ = 0x00;
+          *pData++ = 0x00;
+          *pData++ = 0x00;
+          *pData++ = 0x00;
+          break;
+        case GridToGraph::WALL:
+          *pData++ = 0x00;
+          *pData++ = 0x6f;
+          *pData++ = 0x00;
+          *pData++ = 0xff;
+          break;
+        case GridToGraph::XPND:
+          *pData++ = 0x4f;
+          *pData++ = 0x4f;
+          *pData++ = 0x4f;
+          *pData++ = 0xff;
+          break;
+        case GridToGraph::BOUNDARY | GridToGraph::WALL:
+          *pData++ = 0x00;
+          *pData++ = 0xff;
+          *pData++ = 0x00;
+          *pData++ = 0xff;
+          break;
+        default:
+          *pData++ = xy ? 0xff : 0x00;
+          *pData++ = xy ? 0xff : 0x00;
+          *pData++ = xy ? 0xff : 0x00;
+          *pData++ = xy ? 0xff : 0x00;
+          break;
       }
     }
   }
@@ -552,30 +551,30 @@ void makeTGA2(const char *name, const Grid &grid, unsigned int mask) {
   delete[] pPixel;
   LOG_DEBUG("TGA: " << name << " => " << (ret ? "saved" : "*FAILED*"));
 }
-void makeTGA(const char *name, const Grid &grid, bool preProcess = false) {
+void makeTGA(const char* name, const Grid& grid, bool preProcess = false) {
   // Pre-process was just have bottom word (WALL,EMPTY)
   unsigned int mask = preProcess ? 0xffff : 0xffff0000;
   makeTGA2(name, grid, mask);
 }
 #else
-void makeTGA2(const char *name, const Grid &grid, unsigned int mask) {}
-void makeTGA(const char *name, const Grid &grid, bool preProcess = false) {}
+void makeTGA2(const char* name, const Grid& grid, unsigned int mask) {}
+void makeTGA(const char* name, const Grid& grid, bool preProcess = false) {}
 #endif
-} // namespace
+}  // namespace
 
 /////////////////////////////////////////////////////////////////////////////////////////
 
 //
 // Set the Node and DeadEnds
 //
-void markGridNodes(Grid &grid, const std::vector<Point> &nodes,
-                   const std::vector<Point> &deadEnds) {
+void markGridNodes(Grid& grid, const std::vector<Point>& nodes,
+                   const std::vector<Point>& deadEnds) {
   int nodeIdx = GridToGraph::NODE;
   int dendIdx = GridToGraph::DEND;
-  for (const auto &n : nodes) {
+  for (const auto& n : nodes) {
     grid[n.second][n.first] = nodeIdx++;
   }
-  for (const auto &de : deadEnds) {
+  for (const auto& de : deadEnds) {
     grid[de.second][de.first] = dendIdx++;
   }
 }
@@ -583,11 +582,11 @@ void markGridNodes(Grid &grid, const std::vector<Point> &nodes,
 //
 // Set the Paths to the edge index
 //
-void markGridPaths(Grid &grid, const std::vector<Edge> &edges) {
+void markGridPaths(Grid& grid, const std::vector<Edge>& edges) {
   int edgeIdx = GridToGraph::EDGE;
-  for (const auto &e : edges) {
+  for (const auto& e : edges) {
     int halfway = e.path.size() / 2;
-    for (const auto &p : e.path) {
+    for (const auto& p : e.path) {
       if (isPath(grid[p.second][p.first])) {
         grid[p.second][p.first] = edgeIdx;
       }
@@ -599,7 +598,7 @@ void markGridPaths(Grid &grid, const std::vector<Edge> &edges) {
   }
 }
 
-void markGridBoundaries(Grid &grid) {
+void markGridBoundaries(Grid& grid) {
   int rows = grid.size();
   int cols = grid[0].size();
 
@@ -612,7 +611,7 @@ void markGridBoundaries(Grid &grid) {
           if (grid[nr][nc] & WALL) {
             // Tag wall with BOUNDARY and direction toward walkable space
             // - Clear out old dir bits and apply new ones safely
-            int &cell = grid[nr][nc];
+            int& cell = grid[nr][nc];
             cell = (cell & ~DIR_MASK) |
                    (GridType::reverseDirIndex[dirIdx] & DIR_MASK) | WALL |
                    BOUNDARY;
@@ -629,7 +628,7 @@ void markGridBoundaries(Grid &grid) {
 // has zeroes everywhere except path. So change graph.infoGrid
 // to have WALL wherever was 0 in floorGrid
 //
-void restoreWalls(Grid &infoGrid, const Grid &floorGrid) {
+void restoreWalls(Grid& infoGrid, const Grid& floorGrid) {
   int rows = floorGrid.size();
   int cols = floorGrid[0].size();
   for (int y = 0; y < rows; ++y) {
@@ -642,7 +641,7 @@ void restoreWalls(Grid &infoGrid, const Grid &floorGrid) {
 }
 
 /////////////////////////////////////////////////////////////////////////////////////////
-Path simplifyPath(const Path &inPath) {
+Path simplifyPath(const Path& inPath) {
   Path simplePath;
   if (inPath.size() < 3)
     return inPath;
@@ -650,9 +649,9 @@ Path simplifyPath(const Path &inPath) {
   simplePath.push_back(inPath[0]);
 
   for (size_t i = 1; i < inPath.size() - 1; i++) {
-    const auto &prev = inPath[i - 1];
-    const auto &curr = inPath[i];
-    const auto &next = inPath[i + 1];
+    const auto& prev = inPath[i - 1];
+    const auto& curr = inPath[i];
+    const auto& next = inPath[i + 1];
 
     // Check if "prev -> next" is a valid diagonal move
     int dx = next.first - prev.first;
@@ -681,32 +680,32 @@ Path simplifyPath(const Path &inPath) {
 
 // Custom comparator as a lambda function
 struct EdgeComparator {
-  constexpr bool operator()(const Edge &a, const Edge &b) const {
+  constexpr bool operator()(const Edge& a, const Edge& b) const {
     if (a.from != b.from)
       return a.from < b.from;
     if (a.to != b.to)
       return a.to < b.to;
     if (a.toDeadEnd != b.toDeadEnd)
       return a.toDeadEnd < b.toDeadEnd;
-    return a.path < b.path; // Compare paths
+    return a.path < b.path;  // Compare paths
   }
 };
 
 class EdgeAdder {
   std::set<Edge, EdgeComparator> edges;
 
-  const Grid &grid;
+  const Grid& grid;
   std::set<std::pair<int, int>> adjacentNodePairs;
 
-public:
-  EdgeAdder(const Grid &g) : grid(g) {}
+ public:
+  EdgeAdder(const Grid& g) : grid(g) {}
 
   // Accessor Methods
-  const std::set<Edge, EdgeComparator> &getEdges() { return edges; }
-  const Grid &getGrid() { return grid; }
+  const std::set<Edge, EdgeComparator>& getEdges() { return edges; }
+  const Grid& getGrid() { return grid; }
 
   // Create a new edge from the Path and add it to the set
-  bool addEdge(Path &path) {
+  bool addEdge(Path& path) {
     Edge newEdge;
     if (!getEdge(path, newEdge)) {
       return false;
@@ -717,7 +716,7 @@ public:
       LOG_DEBUG_CONT("#AddEdge DUP EDGE: "
                      << newEdge.from << "->" << newEdge.to
                      << (newEdge.toDeadEnd ? " (DEAD)" : "") << " P: ");
-      LOG_DEBUG_FOR(const auto &p : newEdge.path,
+      LOG_DEBUG_FOR(const auto& p : newEdge.path,
                     p.first << "," << p.second << "  ");
       return false;
     }
@@ -725,16 +724,16 @@ public:
     LOG_DEBUG_CONT("#AddSEdge STORE: " << newEdge.from << "->" << newEdge.to
                                        << (newEdge.toDeadEnd ? " (DEAD)" : "")
                                        << " P: ");
-    LOG_DEBUG_FOR(const auto &p : newEdge.path,
+    LOG_DEBUG_FOR(const auto& p : newEdge.path,
                   p.first << "," << p.second << "  ");
 
     edges.insert(itr, newEdge);
     return true;
   }
 
-private:
+ private:
   // Populate newEdge with the Edge created from the Path (if it is valid)
-  bool getEdge(Path &path, Edge &newEdge) {
+  bool getEdge(Path& path, Edge& newEdge) {
     if (path.empty()) {
       LOG_DEBUG("getEdge => EMPTY");
       return false;
@@ -782,7 +781,7 @@ private:
                                << (startRC & 0xffff) << " -> "
                                << ((endRC & DEND) ? "DEND " : "NODE ")
                                << (endRC & 0xffff) << "   P: ");
-    LOG_DEBUG_FOR(const auto &p : path, "  " << p.first << "," << p.second);
+    LOG_DEBUG_FOR(const auto& p : path, "  " << p.first << "," << p.second);
 
     // Ensure Node1 is the dead, or if none dead then node0 is the lower
     if (isDead0 || (!isDeadEnd && (node0 > node1))) {
@@ -796,9 +795,9 @@ private:
 
     if (simplePath.size() != path.size()) {
       LOG_DEBUG_CONT("#GetEdge INPUT  ");
-      LOG_DEBUG_FOR(const auto &p : path, "  " << p.first << "," << p.second);
+      LOG_DEBUG_FOR(const auto& p : path, "  " << p.first << "," << p.second);
       LOG_DEBUG_CONT("#GetEdge SIMPLE ");
-      LOG_DEBUG_FOR(const auto &p : simplePath,
+      LOG_DEBUG_FOR(const auto& p : simplePath,
                     "  " << p.first << "," << p.second);
     }
 
@@ -814,23 +813,23 @@ private:
 // NODE/DEND cells which are never marked as visited (since there are
 // multiple paths to them, but path cells are used once
 //
-Path followPath(int startX, int startY, EdgeAdder &edgeAdder,
-                std::vector<std::vector<bool>> &visited) {
+Path followPath(int startX, int startY, EdgeAdder& edgeAdder,
+                std::vector<std::vector<bool>>& visited) {
   LOG_DEBUG("## followPath " << startX << "," << startY);
   // If we fail to find a valid path, return empty
   Path emptyPath;
-  const Grid &grid = edgeAdder.getGrid();
+  const Grid& grid = edgeAdder.getGrid();
 
   // Directions in your preferred order: up, left, right, down, then diagonals
   static const std::vector<std::pair<int, int>> directionsHVD = {
-      {0, -1},  // up
-      {-1, 0},  // left
-      {1, 0},   // right
-      {0, 1},   // down
-      {-1, -1}, // diag up-left
-      {1, -1},  // diag up-right
-      {-1, 1},  // diag down-left
-      {1, 1}    // diag down-right
+      {0, -1},   // up
+      {-1, 0},   // left
+      {1, 0},    // right
+      {0, 1},    // down
+      {-1, -1},  // diag up-left
+      {1, -1},   // diag up-right
+      {-1, 1},   // diag down-left
+      {1, 1}     // diag down-right
   };
 
   // We'll keep a copy of 'visited' to revert if needed
@@ -840,8 +839,8 @@ Path followPath(int startX, int startY, EdgeAdder &edgeAdder,
   auto markPathVisited = [&](int x, int y) { tempVisited[y][x] = true; };
 
   // If the start cell is PATH, mark it visited in the temp array
-  if ((grid[startY][startX] != 0)                       // not empty
-      && ((grid[startY][startX] & (NODE | DEND)) == 0)) // i.e., it's PATH
+  if ((grid[startY][startX] != 0)                        // not empty
+      && ((grid[startY][startX] & (NODE | DEND)) == 0))  // i.e., it's PATH
   {
     markPathVisited(startX, startY);
   }
@@ -857,10 +856,10 @@ Path followPath(int startX, int startY, EdgeAdder &edgeAdder,
 
     // Skip empty or visited path cells
     if (grid[ny][nx] == 0)
-      continue; // EMPTY
+      continue;  // EMPTY
     if (isPath(grid[ny][nx]) && tempVisited[ny][nx]) {
       LOG_DEBUG("  " << nx << "," << ny << " => Visited (or Node");
-      continue; // Already visited path cell
+      continue;  // Already visited path cell
     }
 
     // FORWARD PATH: from neighbor
@@ -936,7 +935,7 @@ Path followPath(int startX, int startY, EdgeAdder &edgeAdder,
     while (true) {
       LOG_DEBUG("  BCK " << bck.first << "," << bck.second);
       // If it's PATH, mark visited
-      if (((grid[bck.second][bck.first] & (NODE | DEND)) == 0) // is PATH
+      if (((grid[bck.second][bck.first] & (NODE | DEND)) == 0)  // is PATH
           && !tempVisited[bck.second][bck.first]) {
         markPathVisited(bck.first, bck.second);
         LOG_DEBUG("    VISIT " << bck.first << "," << bck.second);
@@ -957,7 +956,7 @@ Path followPath(int startX, int startY, EdgeAdder &edgeAdder,
         int bx = bck.first - dx2;
         int by = bck.second - dy2;
         if (grid[by][bx] == 0)
-          continue; // empty
+          continue;  // empty
         if (isPath(grid[by][bx]) && tempVisited[by][bx])
           continue;
 
@@ -985,10 +984,10 @@ Path followPath(int startX, int startY, EdgeAdder &edgeAdder,
     // If we get here, we have forward + backward paths => combine them
     // They share the start cell once, but typically that's okay.
     Path result;
-    for (auto &p : backwardPath) {
+    for (auto& p : backwardPath) {
       result.push_back(p);
     }
-    for (auto &p : forwardPath) {
+    for (auto& p : forwardPath) {
       result.push_back(p);
     }
 
@@ -997,7 +996,7 @@ Path followPath(int startX, int startY, EdgeAdder &edgeAdder,
       visited = tempVisited;
       return result;
     }
-    tempVisited = visited; // Revert changes
+    tempVisited = visited;  // Revert changes
     LOG_DEBUG("  ADD EDGE FAILED => Revert");
     // return emptyPath;
   }
@@ -1006,9 +1005,9 @@ Path followPath(int startX, int startY, EdgeAdder &edgeAdder,
   return emptyPath;
 }
 
-std::vector<Edge> findEdges(const std::vector<std::vector<int>> &grid,
-                            const std::vector<Point> &nodes,
-                            const std::vector<Point> &deadEnds) {
+std::vector<Edge> findEdges(const std::vector<std::vector<int>>& grid,
+                            const std::vector<Point>& nodes,
+                            const std::vector<Point>& deadEnds) {
   LOG_INFO("##FINDEDGES nodes:" << nodes.size()
                                 << " deadEnds:" << deadEnds.size());
   const int rows = (int)grid.size();
@@ -1031,15 +1030,15 @@ std::vector<Edge> findEdges(const std::vector<std::vector<int>> &grid,
       Path path = followPath(x, y, edgeAdder, visited);
     }
   }
-  const std::set<Edge, EdgeComparator> &edges = edgeAdder.getEdges();
+  const std::set<Edge, EdgeComparator>& edges = edgeAdder.getEdges();
   std::vector<Edge> result;
   result.reserve(edgeAdder.getEdges().size());
   std::copy(edges.begin(), edges.end(), std::back_inserter(result));
   return result;
 }
 
-std::vector<Edge> findNodeEdges(const std::vector<Point> &nodes,
-                                const std::vector<std::vector<int>> &grid) {
+std::vector<Edge> findNodeEdges(const std::vector<Point>& nodes,
+                                const std::vector<std::vector<int>>& grid) {
   const int rows = (int)grid.size();
   const int cols = (int)grid[0].size();
   std::vector<std::vector<bool>> visited(rows, std::vector<bool>(cols, false));
@@ -1047,7 +1046,7 @@ std::vector<Edge> findNodeEdges(const std::vector<Point> &nodes,
   EdgeAdder edgeAdder(grid);
 
   LOG_INFO("## FIND NODE EDGES for " << nodes.size() << " unconnected nodes");
-  for (const auto &n : nodes) {
+  for (const auto& n : nodes) {
     int x = n.first;
     int y = n.second;
     Path path;
@@ -1055,7 +1054,7 @@ std::vector<Edge> findNodeEdges(const std::vector<Point> &nodes,
       path = followPath(x, y, edgeAdder, visited);
     } while (!path.empty());
   }
-  const std::set<Edge, EdgeComparator> &edges = edgeAdder.getEdges();
+  const std::set<Edge, EdgeComparator>& edges = edgeAdder.getEdges();
   std::vector<Edge> result;
   result.reserve(edgeAdder.getEdges().size());
   std::copy(edges.begin(), edges.end(), std::back_inserter(result));
@@ -1077,8 +1076,8 @@ std::vector<Edge> findNodeEdges(const std::vector<Point> &nodes,
 // list of nodes. Any new edges are added to the complete list
 //
 
-BaseGraph fixBaseEdges(std::vector<Edge> &baseEdges, const Grid &infoGrid,
-                       const std::vector<Point> &baseNodes) {
+BaseGraph fixBaseEdges(std::vector<Edge>& baseEdges, const Grid& infoGrid,
+                       const std::vector<Point>& baseNodes) {
   // First Make a graph edgeNode1 -> list of (edgeNode2, edgeIndex, 1->2 flag,
   // cost)
   BaseGraph baseGraph = GridType::buildBaseGraph(baseEdges, baseNodes.size());
@@ -1103,7 +1102,7 @@ BaseGraph fixBaseEdges(std::vector<Edge> &baseEdges, const Grid &infoGrid,
   GridToGraph::EdgeComparator comp;
   std::set<Edge, EdgeComparator> edgeSet(baseEdges.begin(), baseEdges.end(),
                                          comp);
-  for (const auto &e : connections) {
+  for (const auto& e : connections) {
     if (edgeSet.find(e) == edgeSet.end()) {
       edgeSet.insert(e);
       baseEdges.push_back(e);
@@ -1116,7 +1115,7 @@ BaseGraph fixBaseEdges(std::vector<Edge> &baseEdges, const Grid &infoGrid,
 
 /////////////////////////////////////////////////////////////////////////////////////////
 
-void expandPaths(Grid &infoGrid) {
+void expandPaths(Grid& infoGrid) {
   LOG_INFO("## EXPAND PATHS");
   int rows = infoGrid.size();
   int cols = infoGrid[0].size();
@@ -1152,7 +1151,7 @@ void expandPaths(Grid &infoGrid) {
     for (int d = 0; d < 8; ++d) {
       int nx = x + directions8[d].first;
       int ny = y + directions8[d].second;
-      int &cell = infoGrid[ny][nx];
+      int& cell = infoGrid[ny][nx];
 
       // Must be empty
       if (cell & 0xffff0000)
@@ -1183,14 +1182,14 @@ void expandPaths(Grid &infoGrid) {
 //////////////////////////////////////////////////////////////
 
 // Euclidean distance function
-double euclideanDistance(const Point &a, const Point &b) {
+double euclideanDistance(const Point& a, const Point& b) {
   return std::sqrt(std::pow(a.first - b.first, 2) +
                    std::pow(a.second - b.second, 2));
 }
 
 // Finds the base node closest to the cluster center
-int findCentralNode(const AbstractNode &abstractNode,
-                    const std::vector<Point> &nodes) {
+int findCentralNode(const AbstractNode& abstractNode,
+                    const std::vector<Point>& nodes) {
   if (abstractNode.baseNodes.empty())
     return -1;
 
@@ -1210,8 +1209,8 @@ int findCentralNode(const AbstractNode &abstractNode,
 
 // **Finds the shortest path between two base nodes using BFS**
 Path findPathBetweenNodes(int startNode, int endNode,
-                          const std::vector<Edge> &edges,
-                          const std::vector<Point> &nodes) {
+                          const std::vector<Edge>& edges,
+                          const std::vector<Point>& nodes) {
   std::queue<int> q;
   std::vector<int> prev(nodes.size(), -1);
   std::vector<int> edgeUsed(nodes.size(), -1);
@@ -1229,7 +1228,7 @@ Path findPathBetweenNodes(int startNode, int endNode,
       break;
 
     for (int edgeIdx = 0; edgeIdx < edges.size(); ++edgeIdx) {
-      const auto &edge = edges[edgeIdx];
+      const auto& edge = edges[edgeIdx];
       if (edge.toDeadEnd)
         continue;
 
@@ -1265,7 +1264,7 @@ Path findPathBetweenNodes(int startNode, int endNode,
     if (edgeIdx == -1)
       break;
 
-    const auto &edgePath = edges[edgeIdx].path;
+    const auto& edgePath = edges[edgeIdx].path;
     if (edges[edgeIdx].to == at) {
       fullPath.insert(fullPath.end(), edgePath.begin(), edgePath.end());
     } else {
@@ -1277,13 +1276,13 @@ Path findPathBetweenNodes(int startNode, int endNode,
   LOG_DEBUG_CONT("  NODES: ");
   LOG_DEBUG_FOR(int n : prev, n << " ");
   LOG_DEBUG_CONT("FINAL PATH BETWEEN: " << startNode << " -> " << endNode);
-  LOG_DEBUG_FOR(const auto &pnt : fullPath,
+  LOG_DEBUG_FOR(const auto& pnt : fullPath,
                 "  " << pnt.first << "," << pnt.second);
 
   return fullPath;
 }
 
-static std::vector<int> dbscan(const std::vector<Point> &points, double eps,
+static std::vector<int> dbscan(const std::vector<Point>& points, double eps,
                                int minPts) {
   const int UNVISITED = -1;
   const int NOISE = -2;
@@ -1291,7 +1290,7 @@ static std::vector<int> dbscan(const std::vector<Point> &points, double eps,
   std::vector<int> labels(points.size(), UNVISITED);
   int clusterId = 0;
 
-  auto regionQuery = [&](const Point &p) -> std::vector<int> {
+  auto regionQuery = [&](const Point& p) -> std::vector<int> {
     std::vector<int> neighbors;
     for (size_t i = 0; i < points.size(); ++i) {
       if (euclideanDistance(p, points[i]) <= eps) {
@@ -1302,7 +1301,7 @@ static std::vector<int> dbscan(const std::vector<Point> &points, double eps,
   };
 
   auto expandCluster = [&](int pointIdx, int clusterId,
-                           const std::vector<int> &neighbors) {
+                           const std::vector<int>& neighbors) {
     labels[pointIdx] = clusterId;
 
     std::vector<int> queue = neighbors;
@@ -1344,7 +1343,7 @@ static std::vector<int> dbscan(const std::vector<Point> &points, double eps,
 ////////////////////////////////////////////////////////////////////
 
 // **Creates the Abstract Graph from clustered base nodes**
-std::vector<AbstractNode> createAbstractNodes(const std::vector<Point> &nodes,
+std::vector<AbstractNode> createAbstractNodes(const std::vector<Point>& nodes,
                                               double clusteringEps,
                                               int minClusterSize) {
   // Step 1: Cluster points
@@ -1370,28 +1369,28 @@ std::vector<AbstractNode> createAbstractNodes(const std::vector<Point> &nodes,
 
   // Calculate the center of each cluster
   LOG_DEBUG("##CREATE ANODEs. clusters: " << clusters.size());
-  for (auto &[i, cluster] : clusters) {
+  for (auto& [i, cluster] : clusters) {
     int totalPoints = cluster.baseNodes.size();
     cluster.center.first /= totalPoints;
     cluster.center.second /= totalPoints;
   }
   // Step 3: Collect abstract nodes into a vector
   std::vector<AbstractNode> abstractNodes;
-  for (const auto &[_, cluster] : clusters) {
+  for (const auto& [_, cluster] : clusters) {
     abstractNodes.push_back(cluster);
   }
 
   // Step 4: Assign closest base node to each abstract node
   std::unordered_map<int, int> closestMap;
   int idx = 0;
-  for (auto &abNode : abstractNodes) {
+  for (auto& abNode : abstractNodes) {
     int baseIdx = findCentralNode(abNode, nodes);
     if (baseIdx == -1) {
       LOG_ERROR("Could not find central node for idx: " << idx);
     }
     abNode.baseCenterNode = baseIdx;
     closestMap[idx] = baseIdx;
-    const auto &f = nodes[abNode.baseCenterNode];
+    const auto& f = nodes[abNode.baseCenterNode];
     ++idx;
   }
 
@@ -1402,7 +1401,7 @@ std::vector<AbstractNode> createAbstractNodes(const std::vector<Point> &nodes,
 ///////////////////////////////////////////////////////////////////////
 
 // Compute direction as an index into the directions8 array
-int computeDirection(const Point &from, const Point &to) {
+int computeDirection(const Point& from, const Point& to) {
   int dx = to.first - from.first;
   int dy = to.second - from.second;
 
@@ -1416,16 +1415,16 @@ int computeDirection(const Point &from, const Point &to) {
       return i;
     }
   }
-  return -1; // This should never happen
+  return -1;  // This should never happen
 }
 
 //////////////////////////////////////////////////////////////////////
 
 std::vector<std::vector<int>>
-computeAllPathDists(const std::vector<Edge> &baseEdges, int numNodes) {
+computeAllPathDists(const std::vector<Edge>& baseEdges, int numNodes) {
   // Build adjacency list
   std::vector<std::vector<std::pair<int, int>>> adjList(numNodes);
-  for (const auto &edge : baseEdges) {
+  for (const auto& edge : baseEdges) {
     int weight = edge.path.size();
     adjList[edge.from].emplace_back(edge.to, weight);
     adjList[edge.to].emplace_back(edge.from, weight);
@@ -1447,7 +1446,7 @@ computeAllPathDists(const std::vector<Edge> &baseEdges, int numNodes) {
       if (currentDist > localDist[currentNode])
         continue;
 
-      for (const auto &[neighbor, weight] : adjList[currentNode]) {
+      for (const auto& [neighbor, weight] : adjList[currentNode]) {
         int newDist = currentDist + weight;
         if (newDist < localDist[neighbor]) {
           if (localDist[neighbor] != INF) {
@@ -1475,10 +1474,10 @@ computeAllPathDists(const std::vector<Edge> &baseEdges, int numNodes) {
 // - Populates ZoneGrid with closest AbstractNode index and distance to it
 //
 std::vector<ZoneInfo>
-generateAbstractZones(ZoneGrid &zoneGrid, const Grid &grid,
-                      const BaseGraph &baseGraph,
-                      const std::vector<Edge> &baseEdges,
-                      const std::vector<AbstractNode> &abstractNodes) {
+generateAbstractZones(ZoneGrid& zoneGrid, const Grid& grid,
+                      const BaseGraph& baseGraph,
+                      const std::vector<Edge>& baseEdges,
+                      const std::vector<AbstractNode>& abstractNodes) {
   LOG_INFO("## generateAbstractZones");
   int rows = grid.size();
   int cols = grid[0].size();
@@ -1489,7 +1488,7 @@ generateAbstractZones(ZoneGrid &zoneGrid, const Grid &grid,
 
   using QueueElement =
       std::tuple<int, int, int,
-                 double>; // (row, col, abstractNodeIdx, pathCost)
+                 double>;  // (row, col, abstractNodeIdx, pathCost)
   std::queue<QueueElement> q;
 
   // Initialize BFS from each Abstract Node
@@ -1509,7 +1508,7 @@ generateAbstractZones(ZoneGrid &zoneGrid, const Grid &grid,
     q.pop();
 
     // Check the neighbors of the cur zone cell
-    for (const auto &[dc, dr] : directions8) {
+    for (const auto& [dc, dr] : directions8) {
       int nc = c + dc;
       int nr = r + dr;
 
@@ -1533,8 +1532,8 @@ generateAbstractZones(ZoneGrid &zoneGrid, const Grid &grid,
 
   // If this edge crosses zones update the zone infos
   auto addEdge = [baseEdges, zoneGrid](int edgeIdx,
-                                       std::vector<ZoneInfo> &zones) -> void {
-    const Edge &edge = baseEdges[edgeIdx];
+                                       std::vector<ZoneInfo>& zones) -> void {
+    const Edge& edge = baseEdges[edgeIdx];
     GridType::Point from = edge.path.front();
     GridType::Point to = edge.path.back();
     int fromZone = zoneGrid[from.second][from.first].closestAbstractNodeIdx;
@@ -1575,10 +1574,10 @@ generateAbstractZones(ZoneGrid &zoneGrid, const Grid &grid,
   // First, add all edges from the graph to their appropriate zones
   LOG_DEBUG("Processing " << baseEdges.size() << " total edges");
   for (int edgeIdx = 0; edgeIdx < baseEdges.size(); ++edgeIdx) {
-    const Edge &edge = baseEdges[edgeIdx];
+    const Edge& edge = baseEdges[edgeIdx];
     if (edge.toDeadEnd) {
       LOG_DEBUG("  Skipping edge " << edgeIdx << " (dead end)");
-      continue; // Skip dead end edges
+      continue;  // Skip dead end edges
     }
     addEdge(edgeIdx, zones);
   }
@@ -1608,10 +1607,10 @@ generateAbstractZones(ZoneGrid &zoneGrid, const Grid &grid,
 
 ////////////////////////////////////////////////////////
 
-void generateZoneBoundaries(AbstractLevel &abstractLevel) {
+void generateZoneBoundaries(AbstractLevel& abstractLevel) {
   LOG_INFO("## generateZoneBoundaries");
-  const ZoneGrid &zoneGrid = abstractLevel.zoneGrid;
-  std::vector<ZoneInfo> &zones = abstractLevel.zones;
+  const ZoneGrid& zoneGrid = abstractLevel.zoneGrid;
+  std::vector<ZoneInfo>& zones = abstractLevel.zones;
   int rows = zoneGrid.size();
   int cols = zoneGrid[0].size();
   for (int y = 1; y < rows - 1; ++y) {
@@ -1627,7 +1626,6 @@ void generateZoneBoundaries(AbstractLevel &abstractLevel) {
 
         int neighborZone = zoneGrid[ny][nx].closestAbstractNodeIdx;
         if ((neighborZone != -1) && (neighborZone != curZone)) {
-
           // Add this cell to current zone's boundary map for neighborZone
           int dir8 = dir4todir8Index[dir4];
           zones[curZone].zoneBoundaryCellMap[neighborZone].insert(
@@ -1694,16 +1692,16 @@ std::vector<std::pair<int, int>> computeShortestPath(
 // connect every zone ie. for each pair of adjacnent zones
 // there is no AbstractEdge create an "extra" one
 std::vector<AbstractEdge>
-makeExtraAbstractEdges(const std::vector<Point> &baseNodes,
-                       const std::vector<Edge> &baseEdges,
-                       const std::vector<AbstractNode> &abstractNodes,
-                       const std::vector<AbstractEdge> &abstractEdges,
-                       const std::vector<ZoneInfo> &zones,
-                       const ZoneGrid &zoneGrid, const BaseGraph &baseGraph) {
+makeExtraAbstractEdges(const std::vector<Point>& baseNodes,
+                       const std::vector<Edge>& baseEdges,
+                       const std::vector<AbstractNode>& abstractNodes,
+                       const std::vector<AbstractEdge>& abstractEdges,
+                       const std::vector<ZoneInfo>& zones,
+                       const ZoneGrid& zoneGrid, const BaseGraph& baseGraph) {
   LOG_INFO("## MAKE EXTRA ABSTRACT EDGES");
   // make current connections
   std::unordered_map<std::pair<int, int>, bool, PairHash> connectedZones;
-  for (const auto &edge : abstractEdges) {
+  for (const auto& edge : abstractEdges) {
     connectedZones[{edge.from, edge.to}] = true;
     connectedZones[{edge.to, edge.from}] = true;
   }
@@ -1712,7 +1710,7 @@ makeExtraAbstractEdges(const std::vector<Point> &baseNodes,
   // connected
   std::vector<AbstractEdge> extraEdges;
   for (int zoneA = 0; zoneA < abstractNodes.size(); ++zoneA) {
-    const ZoneInfo &infoA = zones[zoneA];
+    const ZoneInfo& infoA = zones[zoneA];
     for (int zoneB : infoA.adjacentZones) {
       // Check already connected
       if (connectedZones.find({static_cast<int>(zoneA), zoneB}) !=
@@ -1756,7 +1754,7 @@ makeExtraAbstractEdges(const std::vector<Point> &baseNodes,
 
       // We have at least one edge that connects the zones add all the internal
       // edges of other zone to list
-      const ZoneInfo &infoB = zones[zoneB];
+      const ZoneInfo& infoB = zones[zoneB];
       for (int baseIdx : infoB.baseEdgeIdxs) {
         Edge adjacentEdge = baseEdges[baseIdx];
         int toZone = zoneGrid[adjacentEdge.path.back().second]
@@ -1781,15 +1779,15 @@ makeExtraAbstractEdges(const std::vector<Point> &baseNodes,
         LOG_ERROR("*********** EEEEK. No new edges ********** ");
       }
       LOG_INFO("###### => GOT " << newEdges.size() << " extra edges");
-      for (const auto &newEdge : newEdges) {
-        const Edge &fromBase = adjacentBaseEdges[newEdge.from];
-        const Edge &toBase = adjacentBaseEdges[newEdge.to];
+      for (const auto& newEdge : newEdges) {
+        const Edge& fromBase = adjacentBaseEdges[newEdge.from];
+        const Edge& toBase = adjacentBaseEdges[newEdge.to];
         LOG_DEBUG(" ***** ADDed zone connect: "
                   << zoneA << "->" << zoneB << "  EDGE:   frombase: "
                   << fromBase.from << "->" << fromBase.to
                   << "  toBase: " << toBase.from << "->" << toBase.to);
         LOG_DEBUG_CONT("       Path sz:" << newEdge.path.size() << "  ");
-        LOG_DEBUG_FOR(const auto &p : newEdge.path,
+        LOG_DEBUG_FOR(const auto& p : newEdge.path,
                       p.first << "," << p.second << "  ");
         extraEdges.push_back({zoneA, zoneB, newEdge.path});
       }
@@ -1801,7 +1799,7 @@ makeExtraAbstractEdges(const std::vector<Point> &baseNodes,
 
 ///////////////////////////////////////////////////////////////////////////////////////////////////////////////
 
-std::vector<AbstractLevel> makeAbstractLevels(const Graph &graph) {
+std::vector<AbstractLevel> makeAbstractLevels(const Graph& graph) {
   std::vector<AbstractLevel> abstractLevels;
   LOG_INFO("## MAKE ABSTRACT LEVELS");
   do {
@@ -1809,7 +1807,7 @@ std::vector<AbstractLevel> makeAbstractLevels(const Graph &graph) {
 
     LOG_INFO("== MAKE LEVEL: " << pass);
     abstractLevels.push_back({});
-    AbstractLevel &ablv = abstractLevels.back();
+    AbstractLevel& ablv = abstractLevels.back();
 
     // Find the abstract Nodes
     //
@@ -1864,8 +1862,7 @@ std::vector<AbstractLevel> makeAbstractLevels(const Graph &graph) {
   return abstractLevels;
 }
 
-Graph makeGraph(const Grid &floorGrid) {
-  SET_DEBUG("ALL");
+Graph makeGraph(const Grid& floorGrid) {
   LOG_INFO("## MAKE GRAPH");
   {
     writeFloorGridToFile(floorGrid, "GRID.txt");
@@ -1879,8 +1876,8 @@ Graph makeGraph(const Grid &floorGrid) {
   {
     auto tempGrid = graph.infoGrid;
 
-    for (auto &r : tempGrid) {
-      for (auto &c : r) {
+    for (auto& r : tempGrid) {
+      for (auto& c : r) {
         c = (c == EMPTY) ? WALL : EMPTY;
       }
     }
@@ -1956,10 +1953,10 @@ Graph makeGraph(const Grid &floorGrid) {
     LOG_DEBUG_FOR(int i = 0; i < graph.infoGrid[0].size();
                   ++i, "   " << (i % 10));
     int r = 0;
-    for (const auto &row : graph.infoGrid) {
+    for (const auto& row : graph.infoGrid) {
       for (int lp = 0; lp < 3; ++lp) {
         LOG_DEBUG_CONT((r % 10) << " ");
-        for (const auto &cell : row) {
+        for (const auto& cell : row) {
           std::string c = " 0 ";
           if (cell & NODE)
             c = "NNN";
@@ -2021,19 +2018,19 @@ Graph makeGraph(const Grid &floorGrid) {
 
 ///////////////////////////////////////////////////////////
 
-const char *makeDebugName(int pass, const char *name) {
+const char* makeDebugName(int pass, const char* name) {
   static char fname[256];
   sprintf(fname, "GRID_%d_%s.tga", pass, name);
   return fname;
 }
 
 #ifndef NO_DEBUG
-void debugGridEdges(const Graph &graph) {
+void debugGridEdges(const Graph& graph) {
   std::vector<int> uncon =
       checkConnectivity(graph.baseGraph, graph.baseNodes.size());
   Grid tempGrid(graph.infoGrid.size(),
                 std::vector<int>(graph.infoGrid[0].size(), EMPTY));
-  for (const auto &e : graph.baseEdges) {
+  for (const auto& e : graph.baseEdges) {
     for (int i = 1; i < e.path.size() - 1; ++i) {
       int c = e.path[i].first;
       int r = e.path[i].second;
@@ -2056,11 +2053,11 @@ void debugGridEdges(const Graph &graph) {
   makeTGA2("GRID_EDGES.tga", tempGrid, 0xffffffff);
 }
 
-void debugAbstractNodes(int pass, const AbstractLevel &ablv,
-                        const Graph &graph) {
+void debugAbstractNodes(int pass, const AbstractLevel& ablv,
+                        const Graph& graph) {
   Grid tempGrid(graph.infoGrid.size(),
                 std::vector<int>(graph.infoGrid[0].size(), EMPTY));
-  for (const auto &e : graph.baseEdges) {
+  for (const auto& e : graph.baseEdges) {
     for (int i = 1; i < e.path.size() - 1; ++i) {
       int c = e.path[i].first;
       int r = e.path[i].second;
@@ -2080,7 +2077,7 @@ void debugAbstractNodes(int pass, const AbstractLevel &ablv,
     int r = graph.baseNodes[n].second;
     tempGrid[r][c] = NODE;
   }
-  for (const auto &n : ablv.abstractNodes) {
+  for (const auto& n : ablv.abstractNodes) {
     int c = graph.baseNodes[n.baseCenterNode].first;
     int r = graph.baseNodes[n.baseCenterNode].second;
     LOG_DEBUG(c << "," << r << ")");
@@ -2089,13 +2086,13 @@ void debugAbstractNodes(int pass, const AbstractLevel &ablv,
   makeTGA(makeDebugName(pass, "ALL_NODES"), tempGrid);
 }
 
-void debugAbstractEdges(int pass, const AbstractLevel &ablv, const Graph &graph,
-                        const char *fname) {
+void debugAbstractEdges(int pass, const AbstractLevel& ablv, const Graph& graph,
+                        const char* fname) {
   Grid tempGrid(graph.infoGrid.size(),
                 std::vector<int>(graph.infoGrid[0].size(), EMPTY));
 
   for (int idx = 0; idx < ablv.abstractEdges.size(); ++idx) {
-    const auto &e = ablv.abstractEdges.at(idx);
+    const auto& e = ablv.abstractEdges.at(idx);
     for (int i = 1; i < e.path.size() - 1; ++i) {
       int c = e.path[i].first;
       int r = e.path[i].second;
@@ -2121,16 +2118,16 @@ void debugAbstractEdges(int pass, const AbstractLevel &ablv, const Graph &graph,
   makeTGA(makeDebugName(pass, fname), tempGrid);
 }
 
-void debugZones(int pass, const AbstractLevel &ablv, const Graph &graph) {
+void debugZones(int pass, const AbstractLevel& ablv, const Graph& graph) {
   LOG_INFO("DEBUG ZONES");
   int i = 0;
-  for (const auto &zi : ablv.zones) {
+  for (const auto& zi : ablv.zones) {
     LOG_DEBUG_CONT("Level: " << i << " => zones: ");
-    LOG_DEBUG_FOR(const auto &n : zi.adjacentZones, n << " ");
+    LOG_DEBUG_FOR(const auto& n : zi.adjacentZones, n << " ");
     LOG_DEBUG_CONT("         Nodes: ");
-    LOG_DEBUG_FOR(const auto &n : zi.baseNodeIdxs, n << " ");
+    LOG_DEBUG_FOR(const auto& n : zi.baseNodeIdxs, n << " ");
     LOG_DEBUG_CONT("         Edges: ");
-    LOG_DEBUG_FOR(const auto &n : zi.baseEdgeIdxs, n << " ");
+    LOG_DEBUG_FOR(const auto& n : zi.baseEdgeIdxs, n << " ");
     LOG_DEBUG("");
     ++i;
   }
@@ -2164,15 +2161,15 @@ void debugZones(int pass, const AbstractLevel &ablv, const Graph &graph) {
   makeTGA(makeDebugName(pass, "ZONES"), tempGrid);
 }
 
-void debugZoneBoundaries(int pass, const AbstractLevel &ablv) {
+void debugZoneBoundaries(int pass, const AbstractLevel& ablv) {
   int cols = ablv.zoneGrid[0].size();
   int rows = ablv.zoneGrid.size();
   Grid tempGrid(rows, std::vector<int>(cols, EMPTY));
-  for (const auto &zone : ablv.zones) {
-    for (const auto &zoneBoundary : zone.zoneBoundaryCellMap) {
+  for (const auto& zone : ablv.zones) {
+    for (const auto& zoneBoundary : zone.zoneBoundaryCellMap) {
       int curZone = zoneBoundary.first;
-      const auto &boundaryCells = zoneBoundary.second;
-      for (const auto &boundary : boundaryCells) {
+      const auto& boundaryCells = zoneBoundary.second;
+      for (const auto& boundary : boundaryCells) {
         int c = boundary.sink.first;
         int r = boundary.sink.second;
         tempGrid[r][c] = WALL;
@@ -2182,15 +2179,15 @@ void debugZoneBoundaries(int pass, const AbstractLevel &ablv) {
   makeTGA(makeDebugName(pass, "BCELLS"), tempGrid);
 }
 
-void debugDump(const Graph &graph) {
+void debugDump(const Graph& graph) {
   Grid tempGrid(graph.infoGrid);
 
   int l = 0;
   LOG_INFO("DEBUG DUMP");
   LOG_DEBUG("############ LEVELS ");
-  for (const auto &ablv : graph.abstractLevels) {
+  for (const auto& ablv : graph.abstractLevels) {
     int z = 0;
-    for (const auto &srcZoneInfo : ablv.zones) {
+    for (const auto& srcZoneInfo : ablv.zones) {
       LOG_DEBUG_CONT("ablv: " << l << " z: " << z << " b: ");
       LOG_DEBUG_FOR(int b : srcZoneInfo.baseNodeIdxs, " " << b);
       LOG_DEBUG_CONT("ablv: " << l << " z: " << z << " e: ");
@@ -2202,24 +2199,24 @@ void debugDump(const Graph &graph) {
 
   LOG_DEBUG("############ NODES");
   for (int i = 0; i < graph.baseNodes.size(); ++i) {
-    const auto &n = graph.baseNodes[i];
+    const auto& n = graph.baseNodes[i];
     LOG_DEBUG(i << "  " << n.first << "," << n.second);
   }
   LOG_DEBUG("############ EDGES");
   for (int i = 0; i < graph.baseEdges.size(); ++i) {
-    const auto &e = graph.baseEdges[i];
+    const auto& e = graph.baseEdges[i];
     LOG_DEBUG_CONT(i << "  " << e.from << "->" << e.to
                      << (e.toDeadEnd ? " DE" : " "));
     LOG_DEBUG_FOR(const auto p : e.path,
                   "  " << p.first << "," << p.second << " ");
   }
   int lv = 0;
-  for (const auto &ablv : graph.abstractLevels) {
+  for (const auto& ablv : graph.abstractLevels) {
     LOG_DEBUG("########################################################");
     LOG_DEBUG("## ABSTRACT LEVEL " << lv);
     LOG_DEBUG("Abstract Nodes:  " << ablv.abstractNodes.size());
     int idx = 0;
-    for (const auto &node : ablv.abstractNodes) {
+    for (const auto& node : ablv.abstractNodes) {
       LOG_DEBUG(" " << idx << " Center: (" << node.center.first << ", "
                     << node.center.second << ")"
                     << " nodesSz: " << node.baseNodes.size()
@@ -2231,15 +2228,15 @@ void debugDump(const Graph &graph) {
 
     LOG_DEBUG("");
     LOG_DEBUG("Abstract Edges: " << ablv.abstractEdges.size());
-    for (const auto &edge : ablv.abstractEdges) {
+    for (const auto& edge : ablv.abstractEdges) {
       LOG_DEBUG("Edge from Cluster " << edge.from << " to Cluster " << edge.to
                                      << " with cost " << edge.path.size());
     }
-    for (const auto &e : ablv.abstractEdges) {
+    for (const auto& e : ablv.abstractEdges) {
       LOG_DEBUG("  ABEDGE: " << e.from << " to " << e.to
                              << " p: " << e.path.size());
-      const auto &f = ablv.abstractNodes[e.from];
-      const auto &t = ablv.abstractNodes[e.to];
+      const auto& f = ablv.abstractNodes[e.from];
+      const auto& t = ablv.abstractNodes[e.to];
       LOG_DEBUG("    CENTER: " << f.center.first << "," << f.center.second
                                << " to: " << t.center.first << ","
                                << t.center.second);
@@ -2249,7 +2246,7 @@ void debugDump(const Graph &graph) {
       LOG_DEBUG("    BASE T:" << t.baseCenterNode << " TO  : "
                               << graph.baseNodes[t.baseCenterNode].first << ","
                               << graph.baseNodes[t.baseCenterNode].second);
-      for (const auto &p : e.path) {
+      for (const auto& p : e.path) {
         if (tempGrid[p.second][p.first] == (GridToGraph::XPND << 2))
           continue;
         tempGrid[p.second][p.first] = GridToGraph::XPND << 1;
@@ -2273,7 +2270,7 @@ void debugDump(const Graph &graph) {
     LOG_DEBUG("");
     LOG_DEBUG("Base Nodes:  " << graph.baseNodes.size());
     int i = 0;
-    for (const auto &node : graph.baseNodes) {
+    for (const auto& node : graph.baseNodes) {
       LOG_DEBUG("  " << i++ << " " << node.first << "," << node.second);
     }
 
@@ -2285,12 +2282,12 @@ void debugDump(const Graph &graph) {
 
     makeTGA("GRID_FULL.tga", tempGrid);
     for (int i = 0; i < graph.baseEdges.size(); ++i) {
-      const Edge &e = graph.baseEdges[i];
+      const Edge& e = graph.baseEdges[i];
       LOG_DEBUG("Path: " << i << " F:" << e.from << " T:" << e.to
                          << (e.toDeadEnd ? " DEAD" : ""));
       if (e.toDeadEnd)
         continue;
-      LOG_DEBUG_FOR(const auto &p : e.path, "  " << p.first << "," << p.second);
+      LOG_DEBUG_FOR(const auto& p : e.path, "  " << p.first << "," << p.second);
     }
 
     for (int col = 0; col < graph.infoGrid[0].size(); ++col) {
@@ -2302,7 +2299,6 @@ void debugDump(const Graph &graph) {
     LOG_DEBUG("");
     LOG_DEBUG("INFO GRID (nodes/edges)");
     for (int row = 0; row < graph.infoGrid.size(); ++row) {
-
       if (row > 9)
         LOG_DEBUG(row << "  ");
       else
@@ -2360,7 +2356,6 @@ void debugDump(const Graph &graph) {
     }
     LOG_DEBUG("");
     for (int row = 0; row < graph.infoGrid.size();) {
-
       if (toggle) {
         if (row > 9)
           LOG_DEBUG_CONT(row << "  ");
@@ -2422,7 +2417,6 @@ void debugDump(const Graph &graph) {
         LOG_DEBUG_CONT(col << "    ");
     }
     for (int row = 0; row < graph.infoGrid.size(); ++row) {
-
       if (row > 9)
         LOG_DEBUG(row << "   ");
       else
@@ -2431,8 +2425,8 @@ void debugDump(const Graph &graph) {
       for (int col = 0; col < graph.infoGrid[0].size(); ++col) {
         bool found = false;
         int nidx = 0;
-        for (const auto &n : ablv.abstractNodes) {
-          const auto &p = graph.baseNodes[n.baseCenterNode];
+        for (const auto& n : ablv.abstractNodes) {
+          const auto& p = graph.baseNodes[n.baseCenterNode];
           if (p.first == col && p.second == row) {
             int b = n.baseCenterNode;
             if (b >= 10) {
@@ -2447,8 +2441,8 @@ void debugDump(const Graph &graph) {
         }
         if (!found) {
           int eidx = 0;
-          for (const auto &e : ablv.abstractEdges) {
-            for (const auto &p : e.path) {
+          for (const auto& e : ablv.abstractEdges) {
+            for (const auto& p : e.path) {
               if (p.first == col && p.second == row) {
                 if (eidx >= 10) {
                   LOG_DEBUG_CONT(eidx << "e  ");
@@ -2494,14 +2488,14 @@ void debugDump(const Graph &graph) {
 #endif
 
 #ifndef NO_DEBUG
-void writeFloorGridToFile(const std::vector<std::vector<int>> &grid,
-                          const std::string &filename) {
+void writeFloorGridToFile(const std::vector<std::vector<int>>& grid,
+                          const std::string& filename) {
   std::ofstream outFile(filename);
   if (!outFile) {
     throw std::runtime_error("Could not open file for writing");
   }
 
-  for (const auto &row : grid) {
+  for (const auto& row : grid) {
     for (int cell : row) {
       outFile << (cell == GridToGraph::EMPTY ? '#' : ' ');
     }
@@ -2511,9 +2505,9 @@ void writeFloorGridToFile(const std::vector<std::vector<int>> &grid,
 #endif
 
 std::vector<std::vector<int>>
-gridToFloorGrid(const std::vector<std::vector<int>> &grid) {
+gridToFloorGrid(const std::vector<std::vector<int>>& grid) {
   std::vector<std::vector<int>> floorGrid;
-  for (const auto &row : grid) {
+  for (const auto& row : grid) {
     std::vector<int> floorRow;
     for (int cell : row) {
       floorRow.push_back(cell ? GridToGraph::EMPTY : GridToGraph::PATH);
@@ -2523,7 +2517,7 @@ gridToFloorGrid(const std::vector<std::vector<int>> &grid) {
   return floorGrid;
 }
 
-std::vector<std::vector<int>> readGridFromFile(const std::string &filename) {
+std::vector<std::vector<int>> readGridFromFile(const std::string& filename) {
   std::ifstream inFile(filename);
   if (!inFile) {
     throw std::runtime_error("Could not open file for reading");
@@ -2551,14 +2545,14 @@ std::vector<std::vector<int>> readGridFromFile(const std::string &filename) {
 }
 
 #ifndef NO_DEBUG
-void debugZoneEdges(int pass, const AbstractLevel &ablv, const Graph &graph) {
+void debugZoneEdges(int pass, const AbstractLevel& ablv, const Graph& graph) {
   LOG_INFO("## ZONE EDGES DETAILED DUMP");
   LOG_INFO("================================================");
 
   // First, show all edges and which zones they should belong to
   LOG_DEBUG("ALL EDGES AND THEIR ZONE SPANS:");
   for (int edgeIdx = 0; edgeIdx < graph.baseEdges.size(); ++edgeIdx) {
-    const auto &edge = graph.baseEdges[edgeIdx];
+    const auto& edge = graph.baseEdges[edgeIdx];
     GridType::Point from = edge.path.front();
     GridType::Point to = edge.path.back();
     int fromZone =
@@ -2574,21 +2568,21 @@ void debugZoneEdges(int pass, const AbstractLevel &ablv, const Graph &graph) {
   LOG_DEBUG("");
   LOG_DEBUG("ZONE CONTENTS:");
   for (int zoneIdx = 0; zoneIdx < ablv.zones.size(); ++zoneIdx) {
-    const auto &zone = ablv.zones[zoneIdx];
+    const auto& zone = ablv.zones[zoneIdx];
     LOG_DEBUG("Zone " << zoneIdx << ":");
     LOG_DEBUG_CONT("  Base Nodes (" << zone.baseNodeIdxs.size() << "): ");
-    LOG_DEBUG_FOR(const auto &nodeIdx : zone.baseNodeIdxs, nodeIdx << " ");
+    LOG_DEBUG_FOR(const auto& nodeIdx : zone.baseNodeIdxs, nodeIdx << " ");
 
     LOG_DEBUG_CONT("  Base Edges (" << zone.baseEdgeIdxs.size() << "): ");
-    LOG_DEBUG_FOR(const auto &edgeIdx : zone.baseEdgeIdxs, edgeIdx << " ");
+    LOG_DEBUG_FOR(const auto& edgeIdx : zone.baseEdgeIdxs, edgeIdx << " ");
 
     LOG_DEBUG_CONT("  Adjacent Zones: ");
-    LOG_DEBUG_FOR(const auto &adjZone : zone.adjacentZones, adjZone << " ");
+    LOG_DEBUG_FOR(const auto& adjZone : zone.adjacentZones, adjZone << " ");
 
     // Show which edges should be in this zone but aren't
     LOG_DEBUG_CONT("  MISSING EDGES (should be here but aren't): ");
     for (int edgeIdx = 0; edgeIdx < graph.baseEdges.size(); ++edgeIdx) {
-      const auto &edge = graph.baseEdges[edgeIdx];
+      const auto& edge = graph.baseEdges[edgeIdx];
       GridType::Point from = edge.path.front();
       GridType::Point to = edge.path.back();
       int fromZone =
@@ -2612,7 +2606,7 @@ void debugZoneEdges(int pass, const AbstractLevel &ablv, const Graph &graph) {
 #endif
 
 #ifndef NO_DEBUG
-void debugExpandedPaths(const Grid &infoGrid) {
+void debugExpandedPaths(const Grid& infoGrid) {
   for (int r = 0; r < infoGrid.size(); ++r) {
     for (int c = 0; c < infoGrid[0].size(); ++c) {
       int cell = infoGrid[r][c];
@@ -2639,5 +2633,5 @@ void debugExpandedPaths(const Grid &infoGrid) {
   }
 }
 #endif
-} // namespace GridToGraph
-} // namespace DistanceMap
+}  // namespace GridToGraph
+}  // namespace DistanceMap

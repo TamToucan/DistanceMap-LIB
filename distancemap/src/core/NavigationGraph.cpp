@@ -534,7 +534,6 @@ GridType::Point NavigationGraph::getNextMove(Router::RouteCtx* ctx,
 float NavigationGraph::getMoveDirection(Router::RouteCtx* ctx,
                                         GridType::Vec2 from, GridType::Vec2 to,
                                         int type) {
-  SET_DEBUG("ALL");
   GridType::Point fromPnt = {from.x / (m_info.mCellWidth * CELL_MULT),
                              from.y / (m_info.mCellHeight * CELL_MULT)};
   GridType::Point toPnt = {to.x / (m_info.mCellWidth * CELL_MULT),

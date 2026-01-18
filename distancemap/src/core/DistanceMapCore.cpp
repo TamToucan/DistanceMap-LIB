@@ -7,8 +7,7 @@
 namespace DistanceMap {
 
 void DistanceMapCore::initialize(const std::vector<std::vector<int>>& grid,
-                                 const Router::Info& info) {
-  SET_DEBUG("ALL");
+                                 const Router::Info& info, NavigatorType type) {
   this->info = info;
 
   LOG_DEBUG("## CREATE DistaceMapCore");
@@ -39,16 +38,25 @@ void DistanceMapCore::initialize(const std::vector<std::vector<int>>& grid,
   navFlow.reset();
 
   m_graph = GridToGraph::makeGraph(floorGrid);
-  navGraph = std::make_unique<Routing::NavigationGraph>(m_graph, info);
-  navFlow = std::make_unique<Routing::NavigationFlowGrid>(m_graph.infoGrid, info);
-  pNavigator = navGraph.get();
+  switch (type) {
+    case FLOW: {
+      navFlow = std::make_unique<Routing::NavigationFlowGrid>(m_graph.infoGrid, info);
+      pNavigator = navGraph.get();
+      break;
+    }
+    case GRAPH: {
+      navGraph = std::make_unique<Routing::NavigationGraph>(m_graph, info);
+      pNavigator = navGraph.get();
+      break;
+    }
+  }
 }
 
-float DistanceMapCore::getMove(Router::RouteCtx* ctx, GridType::Vec2 from, GridType::Vec2 to, int type) {
+float DistanceMapCore::getMoveAngle(Router::RouteCtx* ctx, GridType::Vec2 from, GridType::Vec2 to, int type) {
   return pNavigator->getMoveDirection(ctx, from, to, type);
 }
 
-GridType::Vec2 DistanceMapCore::getMove(GridType::Vec2 from, float ang, float distance) {
+GridType::Vec2 DistanceMapCore::getMovePos(GridType::Vec2 from, float ang, float distance) {
   // Resolve move with sliding
   return pNavigator->resolveMove(from, ang, distance);
 }

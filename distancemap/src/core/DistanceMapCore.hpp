@@ -11,6 +11,11 @@
 
 namespace DistanceMap {
 
+enum NavigatorType {
+  FLOW,
+  GRAPH,
+};
+
 class DISTANCEMAP_API DistanceMapCore {
  public:
   DistanceMapCore() = default;
@@ -18,9 +23,9 @@ class DISTANCEMAP_API DistanceMapCore {
 
   // Grid is 0 = empty, 1 = solid
   void initialize(const std::vector<std::vector<int>>& grid,
-                  const Router::Info& info);
-  float getMove(Router::RouteCtx* ctx, GridType::Vec2 from, GridType::Vec2 to, int type);
-  GridType::Vec2 getMove(GridType::Vec2 from, float ang, float distance);
+                  const Router::Info& info, NavigatorType type);
+  float getMoveAngle(Router::RouteCtx* ctx, GridType::Vec2 from, GridType::Vec2 to, int type);
+  GridType::Vec2 getMovePos(GridType::Vec2 from, float ang, float distance);
 
  private:
   Router::Info info;

@@ -27,8 +27,10 @@ class DISTANCEMAP_API NavigationAPI {
   virtual bool validateMove(const GridType::Vec2& pos);
 
  protected:
+  // Info grid must be kept around. It will probably be from Graph so that's ok
   const GridType::Grid& m_infoGrid;
-  const Router::Info& m_info;
+  // Router::Info is often temp, so copy it
+  const Router::Info m_info;
   const int m_gridWidth = 0;
   const int m_gridHeight = 0;
   const int m_cellWidth = 1;
