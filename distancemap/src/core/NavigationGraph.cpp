@@ -621,12 +621,12 @@ float NavigationGraph::getMoveDirection(Router::RouteCtx* ctx,
   float cellSizeY = m_info.mCellHeight * 8.0f;
   GridType::Point tgtCell = ctx->next;
 
+#if 0
   // Steering Corner Avoidance:
   // If moving diagonally, check if we are clipping a wall corner.
   // If so, steer towards the SAFE neighbor first to clear the corner.
   int dx = ctx->next.first - fromPnt.first;
   int dy = ctx->next.second - fromPnt.second;
-#if 0
   if (std::abs(dx) == 1 && std::abs(dy) == 1) {
     // Check Horizontal Neighbor
     GridType::Point hNeighbor = {fromPnt.first + dx, fromPnt.second};
