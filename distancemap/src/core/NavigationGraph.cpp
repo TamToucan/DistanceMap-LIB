@@ -1,27 +1,26 @@
 #include "NavigationGraph.hpp"
 
 #include <algorithm>
+#include <cmath>
 
 #include "Debug.h"
+#include "DistanceMapCore.hpp"
 #include "MathUtils.h"
+#include "NavigationAPI.hpp"
 
 namespace DistanceMap {
 namespace Routing {
 
-NavigationGraph::NavigationGraph() {}
-
-void NavigationGraph::initialize(const GridToGraph::Graph& graphData,
-                                 const Router::Info& info) {
-  m_infoGrid = graphData.infoGrid;
-  m_baseGraph = graphData.baseGraph;
-  m_pathCostMap = graphData.pathCostMap;
-  m_routingGraph = graphData.routingGraph;
-  m_baseEdges = graphData.baseEdges;
-  m_baseNodes = graphData.baseNodes;
-  m_deadEnds = graphData.deadEnds;
-  m_abstractLevels = graphData.abstractLevels;
-  m_info = info;
-}
+NavigationGraph::NavigationGraph(const GridToGraph::Graph& graphData,
+                                 const Router::Info& info)
+    : NavigationAPI(graphData.infoGrid, info),
+      m_baseGraph(graphData.baseGraph),
+      m_pathCostMap(graphData.pathCostMap),
+      m_routingGraph(graphData.routingGraph),
+      m_baseEdges(graphData.baseEdges),
+      m_baseNodes(graphData.baseNodes),
+      m_deadEnds(graphData.deadEnds),
+      m_abstractLevels(graphData.abstractLevels) {}
 
 float NavigationGraph::computeAngle(double dx, double dy) {
   if (dx == 0 && dy == 0) {
@@ -536,10 +535,10 @@ float NavigationGraph::getMoveDirection(Router::RouteCtx* ctx,
                                         GridType::Vec2 from, GridType::Vec2 to,
                                         int type) {
   SET_DEBUG("ALL");
-  GridType::Point fromPnt = {from.x / (m_info.mCellWidth * 8),
-                             from.y / (m_info.mCellHeight * 8)};
-  GridType::Point toPnt = {to.x / (m_info.mCellWidth * 8),
-                           to.y / (m_info.mCellHeight * 8)};
+  GridType::Point fromPnt = {from.x / (m_info.mCellWidth * CELL_MULT),
+                             from.y / (m_info.mCellHeight * CELL_MULT)};
+  GridType::Point toPnt = {to.x / (m_info.mCellWidth * CELL_MULT),
+                           to.y / (m_info.mCellHeight * CELL_MULT)};
   LOG_DEBUG("---GETANGLE: from:"
             << from.x << "," << from.y << " to:" << to.x << "," << to.y
             << "  cell: " << m_info.mCellWidth << "x" << m_info.mCellHeight
@@ -611,14 +610,14 @@ float NavigationGraph::getMoveDirection(Router::RouteCtx* ctx,
   }
 
   // Calculate center of next cell in world coords
-  // Assuming 8x8 blocks as per getClosest/m_info usages essentially mean 1 "Navigation Gird Cell" = width/height * 8 world units?
+  // Assuming 8x8 blocks as per getClosest/m_info usages essentially mean 1 "Navigation Gird Cell" = width/height * CELL_MULT world units?
   // Wait, in testLott:
   // info.mCellWidth = 8;
-  // fromPnt = {from.x / (m_info.mCellWidth * 8), ...}
-  // So Cell Size = mCellWidth * 8 = 64.
+  // fromPnt = {from.x / (m_info.mCellWidth * CELL_MULT), ...}
+  // So Cell Size = mCellWidth * CELL_MULT = 64.
   // Center = index * 64 + 32.
-  float cellSizeX = m_info.mCellWidth * 8.0f;
-  float cellSizeY = m_info.mCellHeight * 8.0f;
+  float cellSizeX = m_info.mCellWidth * CELL_MULT;
+  float cellSizeY = m_info.mCellHeight * CELL_MULT;
   GridType::Point tgtCell = ctx->next;
 
 #if 0
@@ -667,54 +666,6 @@ float NavigationGraph::getMoveDirection(Router::RouteCtx* ctx,
                            << " NXT_CENTER: " << nextCenterX << "," << nextCenterY
                            << " = " << ctx->curDir);
   return ctx->curDir;
-}
-
-bool NavigationGraph::validateMove(const GridType::Vec2& pos) {
-  int cellX = (int)(pos.x / (m_info.mCellWidth * 8));
-  int cellY = (int)(pos.y / (m_info.mCellHeight * 8));
-
-  if (cellY < 0 || cellY >= m_infoGrid.size() ||
-      cellX < 0 || cellX >= m_infoGrid[0].size()) {
-    return false;  // Out of bounds is invalid
-  }
-
-  // Check if Wall
-  if (m_infoGrid[cellY][cellX] & GridType::WALL) {
-    return false;
-  }
-  return true;
-}
-
-GridType::Vec2 NavigationGraph::resolveMove(const GridType::Vec2& currentPos, float angle, float distance) {
-  float rad = angle * 3.14159265f / 180.0f;
-  float dx = std::cos(rad) * distance;
-  float dy = std::sin(rad) * distance;
-
-  GridType::Vec2 nextPos;
-  nextPos.x = currentPos.x + dx;
-  nextPos.y = currentPos.y + dy;
-
-  // Try full move
-  if (validateMove(nextPos)) {
-    return nextPos;
-  }
-
-  // Try Slide X
-  GridType::Vec2 slideX = currentPos;
-  slideX.x += dx;
-  if (std::abs(dx) > 0.001f && validateMove(slideX)) {
-    return slideX;
-  }
-
-  // Try Slide Y
-  GridType::Vec2 slideY = currentPos;
-  slideY.y += dy;
-  if (std::abs(dy) > 0.001f && validateMove(slideY)) {
-    return slideY;
-  }
-
-  // Blocked
-  return currentPos;
 }
 
 }  // namespace Routing

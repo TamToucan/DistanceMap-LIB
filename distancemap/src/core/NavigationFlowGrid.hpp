@@ -1,18 +1,19 @@
 #ifndef DISTANCE_MAP_NAVIGATOR_HPP
 #define DISTANCE_MAP_NAVIGATOR_HPP
 
-#include "DistanceMapApi.h"
-#include "GridTypes.hpp"
-#include "Router.hpp"
 #include <limits>
 #include <vector>
 
+#include "DistanceMapDLL.hpp"
+#include "GridTypes.hpp"
+#include "NavigationAPI.hpp"
+#include "Router.hpp"
 
 namespace DistanceMap {
 namespace Routing {
 
 /**
- * DistanceMapNavigator - A simpler, more performant alternative to
+ * NavigationFlowGrid - A simpler, more performant alternative to
  * NavigationGraph
  *
  * Uses a distance map (flow field) approach for navigation:
@@ -23,15 +24,12 @@ namespace Routing {
  * toward the same or slowly-changing target. Distance map computation is
  * ~O(W×H) but only happens when target changes.
  */
-class DISTANCEMAP_API DistanceMapNavigator {
-public:
-  DistanceMapNavigator();
-  ~DistanceMapNavigator() = default;
+class DISTANCEMAP_API NavigationFlowGrid : public NavigationAPI {
+ public:
+  NavigationFlowGrid();
+  ~NavigationFlowGrid() = default;
 
-  /**
-   * Initialize the navigator with grid information
-   */
-  void initialize(const GridType::Grid &infoGrid, const Router::Info &info);
+  NavigationFlowGrid(const GridType::Grid& infoGrid, const Router::Info& info);
 
   /**
    * Main entry point for movement - compatible with NavigationGraph API
@@ -42,30 +40,26 @@ public:
    * @param type Movement type identifier for context switching
    * @return Angle in degrees [0, 360) to move toward target
    */
-  float getMoveDirection(Router::RouteCtx *ctx, GridType::Vec2 from,
-                         GridType::Vec2 to, int type);
+  float getMoveDirection(Router::RouteCtx* ctx, GridType::Vec2 from,
+                         GridType::Vec2 to, int type) override;
 
-private:
+ private:
   /**
    * Cell data in the distance map
    */
   struct Cell {
-    uint16_t distance; // Distance to target in cells (65535 =
-                       // unreachable/uncomputed)
-    uint8_t direction; // Direction index (0-7) to move toward target, or
-                       // SINK/NO_DIR
+    uint16_t distance;  // Distance to target in cells (65535 =
+                        // unreachable/uncomputed)
+    uint8_t direction;  // Direction index (0-7) to move toward target, or
+                        // SINK/NO_DIR
 
     Cell()
         : distance(std::numeric_limits<uint16_t>::max()), direction(NO_DIR) {}
   };
 
   // Special direction values
-  static constexpr uint8_t NO_DIR = 255; // No direction computed
-  static constexpr uint8_t SINK = 254;   // This cell is the target
-
-  // Grid data
-  GridType::Grid m_infoGrid;
-  Router::Info m_info;
+  static constexpr uint8_t NO_DIR = 255;  // No direction computed
+  static constexpr uint8_t SINK = 254;    // This cell is the target
 
   // Distance map cache
   std::vector<std::vector<Cell>> m_distanceMap;
@@ -92,11 +86,11 @@ private:
   /**
    * Get next point by moving in a direction
    */
-  GridType::Point nextPoint(const GridType::Point &from,
-                            const GridType::Point &dir);
+  GridType::Point nextPoint(const GridType::Point& from,
+                            const GridType::Point& dir);
 };
 
-} // namespace Routing
-} // namespace DistanceMap
+}  // namespace Routing
+}  // namespace DistanceMap
 
-#endif // DISTANCE_MAP_NAVIGATOR_HPP
+#endif  // DISTANCE_MAP_NAVIGATOR_HPP

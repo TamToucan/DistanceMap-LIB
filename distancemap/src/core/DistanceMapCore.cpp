@@ -1,16 +1,18 @@
 #include "DistanceMapCore.hpp"
+
 #include "Debug.h"
 #include "GridToGraph.hpp"
+#include "GridTypes.hpp"
 
 namespace DistanceMap {
 
-void DistanceMapCore::initialize(const std::vector<std::vector<int>> &grid,
-                                 const Router::Info &info) {
+void DistanceMapCore::initialize(const std::vector<std::vector<int>>& grid,
+                                 const Router::Info& info) {
   SET_DEBUG("ALL");
   this->info = info;
 
   LOG_DEBUG("## CREATE DistaceMapCore");
-  for (const auto &row : grid) {
+  for (const auto& row : grid) {
     for (int xy : row) {
       LOG_DEBUG_CONT((xy ? '#' : ' '));
     }
@@ -31,15 +33,24 @@ void DistanceMapCore::initialize(const std::vector<std::vector<int>> &grid,
   //   FLOOR = PATH
   GridType::Grid floorGrid = GridToGraph::gridToFloorGrid(grid);
 
-  // Use that floorGrid to create the complete graph for movement
   LOG_INFO("## makeGraph");
-  auto graph = GridToGraph::makeGraph(floorGrid);
-  navGraph.initialize(graph, info);
-  distMapNav.initialize(graph.infoGrid, info);
+  // Reset navigators before updating graph to avoid dangling references during update
+  navGraph.reset();
+  navFlow.reset();
+
+  m_graph = GridToGraph::makeGraph(floorGrid);
+  navGraph = std::make_unique<Routing::NavigationGraph>(m_graph, info);
+  navFlow = std::make_unique<Routing::NavigationFlowGrid>(m_graph.infoGrid, info);
+  pNavigator = navGraph.get();
 }
 
-float DistanceMapCore::getMove(Router::RouteCtx *ctx, GridType::Vec2 from,
-                               GridType::Vec2 to, int type) {
-  return navGraph.getMoveDirection(ctx, from, to, type);
+float DistanceMapCore::getMove(Router::RouteCtx* ctx, GridType::Vec2 from, GridType::Vec2 to, int type) {
+  return pNavigator->getMoveDirection(ctx, from, to, type);
 }
-} // namespace DistanceMap
+
+GridType::Vec2 DistanceMapCore::getMove(GridType::Vec2 from, float ang, float distance) {
+  // Resolve move with sliding
+  return pNavigator->resolveMove(from, ang, distance);
+}
+
+}  // namespace DistanceMap

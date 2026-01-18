@@ -1,10 +1,10 @@
 #pragma once
 
-#include "DistanceMapApi.h"
-#include "GridToGraph.hpp"
-#include "GridTypes.hpp"
 #include <vector>
 
+#include "DistanceMapDLL.hpp"
+#include "GridToGraph.hpp"
+#include "GridTypes.hpp"
 
 namespace DistanceMap {
 namespace Router {
@@ -36,7 +36,11 @@ struct RouteCtx {
   int routeSrcEdgeIdx2 = -1;
   int routeTgtEdgeIdx2 = -1;
 
-  enum class RouteType { None, NodeToNode, NodeToEdge, EdgeToNode, EdgeToEdge };
+  enum class RouteType { None,
+                         NodeToNode,
+                         NodeToEdge,
+                         EdgeToNode,
+                         EdgeToEdge };
   RouteType lastRouteType = RouteType::None;
 };
 
@@ -51,5 +55,5 @@ struct Info {
   int mStartCellY = 0;
 };
 
-} // namespace Router
-} // namespace DistanceMap
+}  // namespace Router
+}  // namespace DistanceMap

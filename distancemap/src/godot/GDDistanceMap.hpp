@@ -6,7 +6,7 @@
 
 #include "Debug.h"
 #include "DistanceMapCore.hpp"
-#include "GDDistanceMapApi.h"
+#include "GDDistanceMapDLL.hpp"
 #include "GDTracker.hpp"
 #include "Router.hpp"
 
@@ -15,7 +15,7 @@ namespace godot {
 class GDDISTANCE_MAP_API GDDistanceMap : public RefCounted {
   GDCLASS(GDDistanceMap, RefCounted)
 
-protected:
+ protected:
   static void _bind_methods();
 
   DistanceMap::Router::Info info;
@@ -23,31 +23,31 @@ protected:
   godot::Vector2i mWall;
 
   DistanceMap::DistanceMapCore core;
-  GDTracker *pTracker = nullptr;
+  GDTracker* pTracker = nullptr;
 
-public:
+ public:
   GDDistanceMap();
   ~GDDistanceMap();
 
-  GDDistanceMap *setBorderSize(godot::Vector2i sz);
-  GDDistanceMap *setCaveSize(godot::Vector2i sz);
-  GDDistanceMap *setCellSize(godot::Vector2i sz);
-  GDDistanceMap *setFloor(godot::Vector2i floor);
-  GDDistanceMap *setTracker() {
+  GDDistanceMap* setBorderSize(godot::Vector2i sz);
+  GDDistanceMap* setCaveSize(godot::Vector2i sz);
+  GDDistanceMap* setCellSize(godot::Vector2i sz);
+  GDDistanceMap* setFloor(godot::Vector2i floor);
+  GDDistanceMap* setTracker() {
     pTracker = GDTracker::getInstance();
     LOG_INFO("## SET TRACKER " << pTracker);
     return this;
   }
 
-  void make_it(TileMapLayer *pTileMap, int layer);
+  void make_it(TileMapLayer* pTileMap, int layer);
 
-  float getMove(godot::Node *node, godot::Vector2 from, godot::Vector2 to,
+  float getMove(godot::Node* node, godot::Vector2 from, godot::Vector2 to,
                 int type);
 
-private:
+ private:
   Vector2i getMapPos(int x, int y);
 };
 
-} // namespace godot
+}  // namespace godot
 
 #endif

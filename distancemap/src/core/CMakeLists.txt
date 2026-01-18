@@ -2,8 +2,32 @@
 set(DMAP_LIB_NAME DistanceMap)
 
 # Source Files
-file(GLOB_RECURSE DMAP_SOURCES CONFIGURE_DEPENDS
-    "*.h" "*.hpp" "*.cpp"
+set(DMAP_SOURCES
+    "AbstractMST.cpp"
+    "AbstractMST.hpp"
+    "DistanceMapCore.cpp"
+    "DistanceMapCore.hpp"
+    "DistanceMapDLL.hpp"
+    "FlowField.cpp"
+    "FlowField.hpp"
+    "GridToGraph.cpp"
+    "GridToGraph.hpp"
+    "GridTypes.cpp"
+    "GridTypes.hpp"
+    "NavigationAPI.cpp"
+    "NavigationAPI.hpp"
+    "NavigationFlowGrid.cpp"
+    "NavigationFlowGrid.hpp"
+    "NavigationGraph.cpp"
+    "NavigationGraph.hpp"
+    "Router.cpp"
+    "Router.hpp"
+    "Routing.cpp"
+    "Routing.hpp"
+    "SparseNavGraph.cpp"
+    "SparseNavGraph.hpp"
+    "WallDistanceGrid.cpp"
+    "WallDistanceGrid.hpp"
 )
 
 # Define Shared Library

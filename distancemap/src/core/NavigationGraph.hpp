@@ -3,9 +3,10 @@
 
 #include <vector>
 
-#include "DistanceMapApi.h"
+#include "DistanceMapDLL.hpp"
 #include "GridToGraph.hpp"
 #include "GridTypes.hpp"
+#include "NavigationAPI.hpp"
 #include "Router.hpp"
 #include "SparseNavGraph.hpp"
 
@@ -13,42 +14,37 @@ namespace DistanceMap {
 namespace Routing {
 
 //
-// DistanceMapNavigator uses a flow field approach:
-//   - Computes distance map once when target changes (~1-3ms for 320x256 grid)
-//   - Answers queries in O(1) time via lookup
-//   - ~150 lines vs 370+ lines in this file
-//   - Only requires infoGrid (no nodes/edges/zones)
+// NavigationFlowGrid uses the GridToGraph::Grid data to navigate.
+// The heart of it is to find the source/target abstract level zones
+// and then
+// - if same then use EDGE/NODE/XPND to move towards the target
+// - if adjacent then move to the boundary of the source zone
+// - otherwise it sort of moved towards the target
+// The world flot/grid int can cause a diagonal to move vert/horz
+// which if the target is clipping a wall will mean it moves into
+// the wall.
+// So validateMove/resolveMove area used to move the agent slide
+// long the wall towards target
 
-class DISTANCEMAP_API NavigationGraph {
+class DISTANCEMAP_API NavigationGraph : public NavigationAPI {
  public:
-  NavigationGraph();
-  ~NavigationGraph() = default;
-
-  void initialize(const GridToGraph::Graph& graphData,
+  NavigationGraph(const GridToGraph::Graph& graphData,
                   const Router::Info& info);
+  ~NavigationGraph() = default;
 
   // Main entry point for movement
   float getMoveDirection(Router::RouteCtx* ctx, GridType::Vec2 from,
-                         GridType::Vec2 to, int type);
-
-  // Checks if a world position is valid (not inside a wall)
-  bool validateMove(const GridType::Vec2& pos);
-
-  // Calculates new position with wall sliding
-  GridType::Vec2 resolveMove(const GridType::Vec2& currentPos, float angle, float distance);
+                         GridType::Vec2 to, int type) override;
 
  private:
   // Data members from GridToGraph::Graph
-  GridType::Grid m_infoGrid;
-  GridToGraph::BaseGraph m_baseGraph;
-  GridToGraph::PathCostMap m_pathCostMap;
-  SparseNavGraph m_routingGraph;
-  std::vector<GridType::Edge> m_baseEdges;
-  std::vector<GridType::Point> m_baseNodes;
-  std::vector<GridType::Point> m_deadEnds;
-  std::vector<GridToGraph::AbstractLevel> m_abstractLevels;
-
-  Router::Info m_info;
+  const GridToGraph::BaseGraph& m_baseGraph;
+  const GridToGraph::PathCostMap& m_pathCostMap;
+  const SparseNavGraph& m_routingGraph;
+  const std::vector<GridType::Edge>& m_baseEdges;
+  const std::vector<GridType::Point>& m_baseNodes;
+  const std::vector<GridType::Point>& m_deadEnds;
+  const std::vector<GridToGraph::AbstractLevel>& m_abstractLevels;
 
   // Helpers
   struct ClosestNodeInfo {
