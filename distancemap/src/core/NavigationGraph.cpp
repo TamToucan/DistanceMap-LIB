@@ -301,21 +301,73 @@ GridType::Point NavigationGraph::getNextMove(Router::RouteCtx* ctx,
       const auto it = std::find(path.begin(), path.end(), source);
       if (it != path.end()) {
         int idx = std::distance(path.begin(), it);
+
+        // Find the target on the path to know which way to go
+        // Use the closest graph point from the target info
+        const auto itTgt = std::find(path.begin(), path.end(),
+                                     tgtEdgeOrDed.closestGraphPoint);
+        int tgtIdx = -1;
+        if (itTgt != path.end()) {
+          tgtIdx = std::distance(path.begin(), itTgt);
+        } else {
+          // If not found, find the closest point on the path
+          int minDist = std::numeric_limits<int>::max();
+          for (int i = 0; i < path.size(); ++i) {
+            int d = std::abs(path[i].first -
+                             tgtEdgeOrDed.closestGraphPoint.first) +
+                    std::abs(path[i].second -
+                             tgtEdgeOrDed.closestGraphPoint.second);
+            if (d < minDist) {
+              minDist = d;
+              tgtIdx = i;
+            }
+          }
+        }
+
         LOG_DEBUG("DBG=== Found Source "
                   << source.first << "," << source.second << " idx: " << idx
                   << " tgtNode: " << tgtNodeIdx << " (" << edge.from << "->"
-                  << edge.to << (edge.toDeadEnd ? " (DED)" : ""));
-        if (tgtNodeIdx != edge.from) {
-          idx = std::max(0, idx - 1);
-          LOG_DEBUG("DBG=== Move BCK to " << path[idx].first << ","
-                                          << path[idx].second);
-          return nextStep(source, path[idx]);
+                  << edge.to << (edge.toDeadEnd ? " (DED)" : "")
+                  << ") tgtIdx: " << tgtIdx);
+
+        if (tgtIdx != -1) {
+          int nextIdx = -1;
+          if (idx < tgtIdx) {
+            nextIdx = std::min(static_cast<int>(path.size()) - 1, idx + 1);
+            LOG_DEBUG("DBG=== Move FWD (Towards Tgt) to " << path[nextIdx].first
+                                                          << ","
+                                                          << path[nextIdx].second);
+          } else if (idx > tgtIdx) {
+            nextIdx = std::max(0, idx - 1);
+            LOG_DEBUG("DBG=== Move BCK (Towards Tgt) to " << path[nextIdx].first
+                                                          << ","
+                                                          << path[nextIdx].second);
+          } else {
+            LOG_DEBUG("DBG=== At Target Index. Move to precise target");
+            // Check if target itself is a wall?
+            return nextStep(source, target);
+          }
+
+          if (nextIdx != -1) {
+            return nextStep(source, path[nextIdx]);
+          }
         } else {
-          idx = std::min(static_cast<int>(path.size()) - 1, idx + 1);
-          LOG_DEBUG("DBG=== Move FWD to " << path[idx].first << ","
-                                          << path[idx].second);
-          return nextStep(source, path[idx]);
+          // Fallback if something went wrong finding target on path
+          // (Should be covered by else case above)
+          LOG_DEBUG("DBG=== Target not found on path, default logic");
+          if (tgtNodeIdx != edge.from) {
+            idx = std::max(0, idx - 1);
+            LOG_DEBUG("DBG=== Move BCK to " << path[idx].first << ","
+                                            << path[idx].second);
+            return nextStep(source, path[idx]);
+          } else {
+            idx = std::min(static_cast<int>(path.size()) - 1, idx + 1);
+            LOG_DEBUG("DBG=== Move FWD to " << path[idx].first << ","
+                                            << path[idx].second);
+            return nextStep(source, path[idx]);
+          }
         }
+
       } else {
         LOG_DEBUG("DBG=== Source " << source.first << "," << source.second
                                    << " Not found in Edge: " << edgeIdx << " ("
