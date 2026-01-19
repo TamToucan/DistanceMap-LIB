@@ -49,6 +49,6 @@ endif()
 
 # Linking
 target_link_libraries(${DMAP_LIB_NAME}
-    PRIVATE Algo MathStuff Stuff
-    PUBLIC Tracker Util
+    PRIVATE Algo Stuff
+    PUBLIC Tracker Util MathStuff
 )
