@@ -4,8 +4,7 @@
 #include "DistanceMapDLL.hpp"
 #include "GridToGraph.hpp"
 #include "GridTypes.hpp"
-#include "NavigationFlowGrid.hpp"
-#include "NavigationGraph.hpp"
+#include "NavigationAPI.hpp"
 #include "Router.hpp"
 #include "WallDistanceGrid.hpp"
 
@@ -23,18 +22,17 @@ class DISTANCEMAP_API DistanceMapCore {
 
   // Grid is 0 = empty, 1 = solid
   void initialize(const std::vector<std::vector<int>>& grid,
-                  const Router::Info& info, NavigatorType type);
-  float getMoveAngle(Router::RouteCtx* ctx, GridType::Vec2 from, GridType::Vec2 to, int type);
-  GridType::Vec2 getMovePos(GridType::Vec2 from, float ang, float distance);
+                  const Router::Info& info);
+
+  std::unique_ptr<NavigationAPI> makeNavigator(NavigatorType type);
+
+  float getMoveAngle(const std::unique_ptr<NavigationAPI>& pNavigator, Router::RouteCtx* ctx, GridType::Vec2 from, GridType::Vec2 to, int type);
+  GridType::Vec2 getMovePos(const std::unique_ptr<NavigationAPI>& pNavigator, GridType::Vec2 from, float ang, float distance);
 
  private:
-  Router::Info info;
+  Router::Info m_info;
   GridToGraph::Graph m_graph;
   GridType::Grid wallDistGrid;
   DistanceMap::SightGrid sightGrid;
-  std::unique_ptr<Routing::NavigationGraph> navGraph;
-
-  std::unique_ptr<Routing::NavigationFlowGrid> navFlow;
-  NavigationAPI* pNavigator = nullptr;
 };
 }  // namespace DistanceMap

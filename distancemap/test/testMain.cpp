@@ -51,12 +51,9 @@ int main(int argc, char** argv) {
   info.mCellHeight = 8;
 
   DistanceMap::DistanceMapCore core;
-  core.initialize(grid, info, DistanceMap::NavigatorType::GRAPH);
+  core.initialize(grid, info);
 
-  /*
-  Routing::NavigationGraph navGraph;
-  navGraph.initialize(graph, info);
-  */
+  auto pNavigator = core.makeNavigator(DistanceMap::NavigatorType::GRAPH);
 
   DistanceMap::GridType::Vec2 from(300, 250);
   DistanceMap::GridType::Vec2 to(1950, 1086);
@@ -95,10 +92,7 @@ int main(int argc, char** argv) {
     std::cerr << "MOVEFROM: " << fromPnt.first << "," << fromPnt.second
               << std::endl;
 
-    /*
-float ang = navGraph.getMoveDirection(ctx, from, to, 0);
-*/
-    float ang = core.getMoveAngle(ctx, from, to, 0);
+    float ang = core.getMoveAngle(pNavigator, ctx, from, to, 0);
     std::pair<float, float> mv = computeDirection(ang);
     from.x += mv.first * 13;
     from.y += mv.second * 13;

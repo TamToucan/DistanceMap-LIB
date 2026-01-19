@@ -14,8 +14,7 @@ class CuteDistanceMap {
 
   // Grid is 0 = empty, 1 = solid
   void initialize(const std::vector<std::vector<int>>& grid,
-                  const DistanceMap::Router::Info& info,
-                  DistanceMap::NavigatorType type);
+                  const DistanceMap::Router::Info& info);
 
   DistanceMap::DistanceMapCore& core() { return mCore; };
 
