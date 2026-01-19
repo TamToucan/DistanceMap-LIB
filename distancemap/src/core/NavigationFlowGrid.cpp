@@ -98,8 +98,33 @@ void NavigationFlowGrid::computeDistanceMap(GridType::Point target) {
         }
       }
 
-      // Calculate new distance (uniform cost = 1 per cell)
-      uint16_t newDist = currentDist + 1;
+      // Corner Checking:
+      // If moving diagonally (odd dirIdx), check adjacent cardinals.
+      // If either is a WALL, we can't move diagonally (corner cut).
+      if (dirIdx % 2 != 0) {
+        int c1 = (dirIdx - 1) & 7;  // Previous Cardinal
+        int c2 = (dirIdx + 1) % 8;  // Next Cardinal
+
+        // Helper to check if a neighbor is a blocking wall
+        auto isBlocking = [&](int cx, int cy) {
+          if (cx < 0 || cx >= cols || cy < 0 || cy >= rows)
+            return true;  // Bounds check (treat as wall)
+          int cell = m_infoGrid[cy][cx];
+          return (cell & GridType::WALL) && !(cell & GridType::BOUNDARY);
+        };
+
+        if (isBlocking(x + GridType::directions8[c1].first,
+                       y + GridType::directions8[c1].second) ||
+            isBlocking(x + GridType::directions8[c2].first,
+                       y + GridType::directions8[c2].second)) {
+          continue;
+        }
+      }
+
+      // Calculate new distance
+      // Cost: 10 for Cardinal, 14 for Diagonal
+      uint16_t moveCost = (dirIdx % 2 == 0) ? 10 : 14;
+      uint16_t newDist = currentDist + moveCost;
 
       // Check for overflow
       if (newDist >= std::numeric_limits<uint16_t>::max()) {
