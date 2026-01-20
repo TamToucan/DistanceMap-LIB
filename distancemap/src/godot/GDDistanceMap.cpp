@@ -11,8 +11,11 @@
 #include <godot_cpp/variant/vector3.hpp>
 #include <vector>
 
+#include "Cave.h"
 #include "Debug.h"
+#include "GDCave.hpp"
 #include "GDTracker.hpp"
+#include "TileTypes.h"
 
 using namespace godot;
 using namespace DistanceMap;
@@ -29,13 +32,19 @@ void GDDistanceMap::_bind_methods() {
   ClassDB::bind_method(D_METHOD("make_distance_map", "pTileMap", "layer"),
                        &GDDistanceMap::make_it);
   ClassDB::bind_method(D_METHOD("get_move", "node", "from", "to", "type"),
-                       &GDDistanceMap::getMove);
+                       &GDDistanceMap::getMoveAngle);
   ClassDB::bind_method(D_METHOD("set_tracker"), &GDDistanceMap::setTracker);
 }
 
 GDDistanceMap::GDDistanceMap() {
   mFloor = Vector2i(0, 0);
   mWall = Vector2i(0, 1);
+  // This is a pain. Godot has TileMapLayer so don't have the original "tiles"
+  // just the coords. So create a reverse mapping of coords to tiles
+  for (int t = 0; t < Cave::TileName::TILE_COUNT; ++t) {
+    auto coords = GDCave::GDCave::getAtlasCoords(t);
+    mCoordsToTile[coords] = t;
+  }
 }
 
 GDDistanceMap::~GDDistanceMap() {}
@@ -81,13 +90,15 @@ void GDDistanceMap::make_it(TileMapLayer* pTileMap, int layer) {
   for (int y = 0; y < info.mCaveHeight; ++y) {
     for (int x = 0; x < info.mCaveWidth; ++x) {
       Vector2i coords = getMapPos(x, y);
-      int v = (pTileMap->get_cell_atlas_coords(coords) == mFloor) ? 0 : 1;
+      coords = pTileMap->get_cell_atlas_coords(coords);
+      int v = Cave::Cave::isEmpty(mCoordsToTile[coords]) ? 0 : 1;
       // This never writes the 1x1 border edge which has been init'ed to 1
       grid[y + 1][x + 1] = v;
     }
   }
 
   core.initialize(grid, info);
+  mpNavigator = core.makeNavigator(NavigatorType::GRAPH);
 }
 
 // ===========================================================================
@@ -108,8 +119,8 @@ static void untrack_cb(godot::Node* id, void* ctx) {
   }
 }
 
-float GDDistanceMap::getMove(godot::Node* id, godot::Vector2 from,
-                             godot::Vector2 to, int type) {
+float GDDistanceMap::getMoveAngle(godot::Node* id, godot::Vector2 from,
+                                  godot::Vector2 to, int type) {
   DistanceMap::Router::RouteCtx* ctx =
       pTracker ? pTracker->getContext<DistanceMap::Router::RouteCtx>(id)
                : nullptr;
@@ -124,5 +135,5 @@ float GDDistanceMap::getMove(godot::Node* id, godot::Vector2 from,
   GridType::Vec2 fromV(from.x, from.y);
   GridType::Vec2 toV(to.x, to.y);
 
-  return core.getMove(ctx, fromV, toV, type);
+  return core.getMoveAngle(mpNavigator, ctx, fromV, toV, type);
 }

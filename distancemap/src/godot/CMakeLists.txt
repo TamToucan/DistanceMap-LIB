@@ -9,7 +9,6 @@ target_compile_definitions(${GDDMAP_LIB_NAME} PRIVATE GDDISTANCEMAP_EXPORTS)
 
 target_include_directories(${GDDMAP_LIB_NAME} PRIVATE
     "${CMAKE_CURRENT_SOURCE_DIR}/../core"
-    "${CMAKE_CURRENT_SOURCE_DIR}"
     "${CMAKE_BINARY_DIR}/_deps/libs-src/lib/Util"
 )
 
@@ -19,7 +18,7 @@ endif()
 
 # Link to the sibling 'DistanceMap' target
 target_link_libraries(${GDDMAP_LIB_NAME}
-    PRIVATE DistanceMap GDTracker
+    PRIVATE DistanceMap GDCave Cave GDTracker
     PUBLIC godot::cpp
 )
 

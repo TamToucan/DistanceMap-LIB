@@ -3,15 +3,17 @@
 
 #include <godot_cpp/classes/object.hpp>
 #include <godot_cpp/classes/tile_map_layer.hpp>
+#include <map>
+#include <memory>
 
 #include "Debug.h"
 #include "DistanceMapCore.hpp"
 #include "GDDistanceMapDLL.hpp"
 #include "GDTracker.hpp"
+#include "NavigationAPI.hpp"
 #include "Router.hpp"
 
 namespace godot {
-
 class GDDISTANCE_MAP_API GDDistanceMap : public RefCounted {
   GDCLASS(GDDistanceMap, RefCounted)
 
@@ -41,11 +43,13 @@ class GDDISTANCE_MAP_API GDDistanceMap : public RefCounted {
 
   void make_it(TileMapLayer* pTileMap, int layer);
 
-  float getMove(godot::Node* node, godot::Vector2 from, godot::Vector2 to,
-                int type);
+  float getMoveAngle(godot::Node* node, godot::Vector2 from, godot::Vector2 to,
+                     int type);
 
  private:
-  Vector2i getMapPos(int x, int y);
+  godot::Vector2i getMapPos(int x, int y);
+  std::map<godot::Vector2i, int> mCoordsToTile;
+  std::unique_ptr<DistanceMap::NavigationAPI> mpNavigator;
 };
 
 }  // namespace godot
