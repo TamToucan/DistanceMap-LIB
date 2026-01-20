@@ -8,9 +8,9 @@
             "name": "Launch",
             "type": "lldb",
             "request": "launch",
-            "program": "${workspaceRoot}/build/distanceMap/testMain.exe",
+            "program": "${workspaceRoot}/build/distancemap/test/dmapTest.exe",
             "args": [],
-            "cwd": "${workspaceRoot}/build/distancemap",
+            "cwd": "${workspaceRoot}/build/distancemap/test",
             "preLaunchTask": "Build Map Test (Debug)",
             "sourceMap": {
                 "/d/git/Cave": "${workspaceRoot}"

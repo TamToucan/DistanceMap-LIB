@@ -9,6 +9,8 @@ if(TARGET DistanceMapLib::DistanceMap)
     add_custom_command(TARGET dmapTest POST_BUILD
         COMMAND ${CMAKE_COMMAND} -E copy_if_different
         $<TARGET_FILE:DistanceMapLib::DistanceMap>
+        $<TARGET_FILE:Util>
+        "${CMAKE_CURRENT_SOURCE_DIR}/GRID.txt"
         $<TARGET_FILE_DIR:dmapTest>
     )
 endif()
@@ -25,6 +27,7 @@ if(TARGET DistanceMapLib::DistanceMap)
     add_custom_command(TARGET dmapTime POST_BUILD
         COMMAND ${CMAKE_COMMAND} -E copy_if_different
         $<TARGET_FILE:DistanceMapLib::DistanceMap>
+        $<TARGET_FILE:Util>
         $<TARGET_FILE_DIR:dmapTime>
     )
 endif()

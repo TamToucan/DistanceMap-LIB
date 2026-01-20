@@ -4,7 +4,7 @@
         {
             "label": "Build Map Test (Debug)",
             "type": "shell",
-            "command": "cmake --preset=mingw64 -S . -B build && cmake --build build --target testMain",
+            "command": "cmake --preset=mingw64 -S . -B build && cmake --build build --target dmapTest",
             "options": {
                 "shell": {
                     "executable": "cmd.exe",
