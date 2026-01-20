@@ -159,7 +159,7 @@ void NavigationFlowGrid::computeDistanceMap(GridType::Point target) {
   for (const auto& row : m_distanceMap) {
     for (const auto& cell : row) {
       if (cell.distance == std::numeric_limits<uint16_t>::max()) {
-        LOG_DEBUG_CONT("XXX");
+        LOG_DEBUG_CONT(" . " << " ");
       } else {
         LOG_DEBUG_CONT(std::setw(3) << cell.distance << " ");
       }
