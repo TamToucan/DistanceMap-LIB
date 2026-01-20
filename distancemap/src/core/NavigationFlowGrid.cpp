@@ -97,13 +97,11 @@ void NavigationFlowGrid::computeDistanceMap(GridType::Point target) {
 
       int neighborCell = m_infoGrid[ny][nx];
 
-      // Skip walls (but handle boundaries)
-      // Note: for movement *into* a cell, we might allow boundaries
+      // Skip walls
+      // Note: We used to allow boundaries, but that causes the agent to walk
+      // INTO the wall.
       if (neighborCell & GridType::WALL) {
-        // If it's a boundary, we might be able to move through it
-        if (!(neighborCell & GridType::BOUNDARY)) {
-          continue;
-        }
+        continue;
       }
 
       // Corner Checking:

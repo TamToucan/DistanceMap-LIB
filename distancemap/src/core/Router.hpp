@@ -2,8 +2,6 @@
 
 #include <vector>
 
-#include "DistanceMapDLL.hpp"
-#include "GridToGraph.hpp"
 #include "GridTypes.hpp"
 
 namespace DistanceMap {
