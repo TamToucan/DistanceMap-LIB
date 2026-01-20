@@ -2,6 +2,7 @@
 
 #include <algorithm>
 #include <cmath>
+#include <limits>
 #include <queue>
 
 #include "Debug.h"
@@ -155,6 +156,16 @@ void NavigationFlowGrid::computeDistanceMap(GridType::Point target) {
   m_cachedTarget = target;
   m_cacheValid = true;
 
+  for (const auto& row : m_distanceMap) {
+    for (const auto& cell : row) {
+      if (cell.distance == std::numeric_limits<uint16_t>::max()) {
+        LOG_DEBUG_CONT("XXX");
+      } else {
+        LOG_DEBUG_CONT(std::setw(3) << cell.direction << " ");
+      }
+    }
+    LOG_DEBUG("");
+  }
   LOG_DEBUG("DistanceMap: Processed " << cellsProcessed << " cells");
 }
 
