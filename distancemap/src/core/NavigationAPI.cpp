@@ -7,8 +7,8 @@ namespace DistanceMap {
 NavigationAPI::NavigationAPI(const GridType::Grid& infoGrid, const Router::Info& info)
     : m_infoGrid(infoGrid),
       m_info(info),
-      m_gridWidth(infoGrid.size()),
-      m_gridHeight(infoGrid[0].size()),
+      m_gridWidth(infoGrid[0].size()),
+      m_gridHeight(infoGrid.size()),
       m_cellWidth(info.mCellWidth),
       m_cellHeight(info.mCellHeight) {
 }
