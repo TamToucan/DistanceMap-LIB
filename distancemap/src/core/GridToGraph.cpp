@@ -20,7 +20,6 @@
 #include "TGA.hpp"
 #include "ZSThinning.hpp"
 
-
 namespace DistanceMap {
 
 using namespace GridType;
@@ -1425,6 +1424,7 @@ computeAllPathDists(const std::vector<Edge>& baseEdges, int numNodes) {
   // Build adjacency list
   std::vector<std::vector<std::pair<int, int>>> adjList(numNodes);
   for (const auto& edge : baseEdges) {
+    if (edge.toDeadEnd) continue;
     int weight = edge.path.size();
     adjList[edge.from].emplace_back(edge.to, weight);
     adjList[edge.to].emplace_back(edge.from, weight);
