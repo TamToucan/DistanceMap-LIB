@@ -19,6 +19,8 @@ struct RouteCtx {
 
   // Limit number of times can keep reusing previous direction
   // before re-routing
+  // NOTE: For GRAPH routing 0 = infinite. FLOW doesn't allow
+  // 0 and resets it to 20
   int reuseInit = 0;
   int reuseCnt = reuseInit;
   bool didReuse = false;

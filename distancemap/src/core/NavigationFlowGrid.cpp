@@ -98,6 +98,7 @@ void NavigationFlowGrid::computeDistanceMap(GridType::Point target) {
       int neighborCell = m_infoGrid[ny][nx];
 
       // Skip walls (but handle boundaries)
+      // Note: for movement *into* a cell, we might allow boundaries
       if (neighborCell & GridType::WALL) {
         // If it's a boundary, we might be able to move through it
         if (!(neighborCell & GridType::BOUNDARY)) {
@@ -113,11 +114,15 @@ void NavigationFlowGrid::computeDistanceMap(GridType::Point target) {
         int c2 = (dirIdx + 1) % 8; // Next Cardinal
 
         // Helper to check if a neighbor is a blocking wall
+        // FIX: Treat BOUNDARY as blocking for CORNER checks to avoid cutting
+        // through walls
         auto isBlocking = [&](int cx, int cy) {
           if (cx < 0 || cx >= cols || cy < 0 || cy >= rows)
             return true; // Bounds check (treat as wall)
           int cell = m_infoGrid[cy][cx];
-          return (cell & GridType::WALL) && !(cell & GridType::BOUNDARY);
+          // We MUST block boundaries here, otherwise we try to walk through the
+          // wall corner
+          return (cell & GridType::WALL) != 0;
         };
 
         if (isBlocking(x + GridType::directions8[c1].first,
@@ -286,8 +291,12 @@ float NavigationFlowGrid::getMoveDirection(Router::RouteCtx *ctx,
     if (stillValid) {
       // Only allow reuse if the next point is adjacent
       bool isAdjacent = (std::abs(dx) <= 1 && std::abs(dy) <= 1);
-      bool allowReuse =
-          isAdjacent && ((ctx->reuseInit) ? --ctx->reuseCnt : true);
+
+      // FIX: Enforce a reuse limit if it is 0/Infinite
+      if (ctx->reuseInit <= 0)
+        ctx->reuseInit = 20;
+
+      bool allowReuse = isAdjacent && (ctx->reuseCnt-- > 0);
 
       if (allowReuse) {
         LOG_DEBUG("DistanceMap: Reusing direction (" << ctx->reuseCnt
@@ -317,6 +326,11 @@ float NavigationFlowGrid::getMoveDirection(Router::RouteCtx *ctx,
   ctx->from = fromPnt;
   ctx->to = toPnt;
   ctx->type = type;
+
+  // FIX: Initialize reuseCnt logic
+  if (ctx->reuseInit <= 0)
+    ctx->reuseInit = 20;
+  ctx->reuseCnt = ctx->reuseInit;
 
   // Get next move
   ctx->next = getNextMove(fromPnt, toPnt);
