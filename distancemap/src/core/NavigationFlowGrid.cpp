@@ -111,6 +111,12 @@ void NavigationFlowGrid::computeDistanceMap(GridType::Point target) {
         int c1 = (dirIdx - 1) & 7;  // Previous Cardinal
         int c2 = (dirIdx + 1) % 8;  // Next Cardinal
 
+        // Can't do this because can have a path which is just
+        // a diagonal through a corner. i.e
+        //  #  #
+        //  # ##
+        //  ##
+#if 0
         // Helper to check if a neighbor is a blocking wall
         // FIX: Treat BOUNDARY as blocking for CORNER checks to avoid cutting
         // through walls
@@ -129,6 +135,7 @@ void NavigationFlowGrid::computeDistanceMap(GridType::Point target) {
                        y + GridType::directions8[c2].second)) {
           continue;
         }
+#endif
       }
 
       // Calculate new distance
