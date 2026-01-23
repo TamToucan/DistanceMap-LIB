@@ -104,6 +104,7 @@ void NavigationFlowGrid::computeDistanceMap(GridType::Point target) {
         continue;
       }
 
+#if 0
       // Corner Checking:
       // If moving diagonally (odd dirIdx), check adjacent cardinals.
       // If either is a WALL, we can't move diagonally (corner cut).
@@ -114,9 +115,11 @@ void NavigationFlowGrid::computeDistanceMap(GridType::Point target) {
         // Can't do this because can have a path which is just
         // a diagonal through a corner. i.e
         //  #  #
-        //  # ##
+        //  #  #
+        //  # ####
         //  ##
-#if 0
+        //  ######
+
         // Helper to check if a neighbor is a blocking wall
         // FIX: Treat BOUNDARY as blocking for CORNER checks to avoid cutting
         // through walls
@@ -135,8 +138,8 @@ void NavigationFlowGrid::computeDistanceMap(GridType::Point target) {
                        y + GridType::directions8[c2].second)) {
           continue;
         }
+    }
 #endif
-      }
 
       // Calculate new distance
       // Cost: 10 for Cardinal, 14 for Diagonal
