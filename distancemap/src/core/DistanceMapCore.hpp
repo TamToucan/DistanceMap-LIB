@@ -16,23 +16,26 @@ enum NavigatorType {
 };
 
 class DISTANCEMAP_API DistanceMapCore {
- public:
+public:
   DistanceMapCore() = default;
   ~DistanceMapCore() = default;
 
   // Grid is 0 = empty, 1 = solid
-  void initialize(const std::vector<std::vector<int>>& grid,
-                  const Router::Info& info);
+  void initialize(const std::vector<std::vector<int>> &grid,
+                  const Router::Info &info);
 
   std::unique_ptr<NavigationAPI> makeNavigator(NavigatorType type);
 
-  float getMoveAngle(const std::unique_ptr<NavigationAPI>& pNavigator, Router::RouteCtx* ctx, GridType::Vec2 from, GridType::Vec2 to, int type);
-  GridType::Vec2 getMovePos(const std::unique_ptr<NavigationAPI>& pNavigator, GridType::Vec2 from, float ang, float distance);
+  float getMoveAngle(const std::unique_ptr<NavigationAPI> &pNavigator,
+                     Router::RouteCtx *ctx, GridType::Vec2 from,
+                     GridType::Vec2 to, int type);
+  GridType::Vec2 getMovePos(const std::unique_ptr<NavigationAPI> &pNavigator,
+                            GridType::Vec2 from, float ang, float distance);
 
- private:
+private:
   Router::Info m_info;
   GridToGraph::Graph m_graph;
   GridType::Grid wallDistGrid;
   DistanceMap::SightGrid sightGrid;
 };
-}  // namespace DistanceMap
+} // namespace DistanceMap

@@ -9,7 +9,7 @@
 #include "DistanceMapDLL.hpp"
 #include "FlowField.hpp"
 #include "GridTypes.hpp"
-#include "Routing.hpp"
+#include "SparseNavGraph.hpp"
 
 //
 // Take the 2D grid of EMPTY/PATH (i.e. 1 = floor, 0 = wall) and
@@ -72,15 +72,15 @@ namespace DistanceMap {
 namespace GridToGraph {
 
 DISTANCEMAP_API std::vector<std::vector<int>>
-gridToFloorGrid(const std::vector<std::vector<int>>& grid);
+gridToFloorGrid(const std::vector<std::vector<int>> &grid);
 DISTANCEMAP_API std::vector<std::vector<int>>
-readGridFromFile(const std::string& filename);
+readGridFromFile(const std::string &filename);
 
 using namespace GridType;
 
 // For INPUT GRID
 const int EMPTY = 0x00;
-const int PATH = 0x01;  // NOTE: Must be 1 for dead end detection
+const int PATH = 0x01; // NOTE: Must be 1 for dead end detection
 
 // An AbstractLevel takes the base nodes and groups them into
 // clusters of size based on the level number. This creates
@@ -104,7 +104,7 @@ using PathCostMap = std::unordered_map<std::pair<int, int>, int, PairHash>;
 
 struct FallbackCell {
   int nextFlowX = 0;
-  int nextFlowY = 0;  // Closest flow field point
+  int nextFlowY = 0; // Closest flow field point
   int distance = -1;
 };
 using FallbackGrid = std::vector<std::vector<FallbackCell>>;
@@ -124,9 +124,9 @@ struct Graph {
 //
 // Floor must = PATH on input i.e. walkable, WALLS = EMPTY
 //
-DISTANCEMAP_API Graph makeGraph(const GridType::Grid& floorGrid);
+DISTANCEMAP_API Graph makeGraph(const GridType::Grid &floorGrid);
 
-}  // namespace GridToGraph
-}  // namespace DistanceMap
+} // namespace GridToGraph
+} // namespace DistanceMap
 
 #endif /* DISTANCEMAP_SRC_GRIDTOGRAPH_HPP_ */
