@@ -27,24 +27,27 @@ namespace Routing {
 // long the wall towards target
 
 class DISTANCEMAP_API NavigationGraph : public NavigationAPI {
- public:
-  NavigationGraph(const GridToGraph::Graph& graphData,
-                  const Router::Info& info);
+public:
+  NavigationGraph(const GridToGraph::Graph &graphData,
+                  const Router::Info &info);
   ~NavigationGraph() = default;
 
   // Main entry point for movement
-  float getMoveDirection(Router::RouteCtx* ctx, GridType::Vec2 from,
+  float getMoveDirection(Router::RouteCtx *ctx, GridType::Vec2 from,
                          GridType::Vec2 to, int type) override;
 
- private:
+  const std::vector<GridToGraph::AbstractLevel> *
+  getAbstractLevels() const override;
+
+private:
   // Data members from GridToGraph::Graph
-  const GridToGraph::BaseGraph& m_baseGraph;
-  const GridToGraph::PathCostMap& m_pathCostMap;
-  const SparseNavGraph& m_routingGraph;
-  const std::vector<GridType::Edge>& m_baseEdges;
-  const std::vector<GridType::Point>& m_baseNodes;
-  const std::vector<GridType::Point>& m_deadEnds;
-  const std::vector<GridToGraph::AbstractLevel>& m_abstractLevels;
+  const GridToGraph::BaseGraph &m_baseGraph;
+  const GridToGraph::PathCostMap &m_pathCostMap;
+  const SparseNavGraph &m_routingGraph;
+  const std::vector<GridType::Edge> &m_baseEdges;
+  const std::vector<GridType::Point> &m_baseNodes;
+  const std::vector<GridType::Point> &m_deadEnds;
+  const std::vector<GridToGraph::AbstractLevel> &m_abstractLevels;
 
   // Helpers
   struct ClosestNodeInfo {
@@ -54,18 +57,18 @@ class DISTANCEMAP_API NavigationGraph : public NavigationAPI {
     GridType::Point closestGraphPoint;
   };
 
-  GridType::Point getNextMove(Router::RouteCtx* ctx, GridType::Point source,
+  GridType::Point getNextMove(Router::RouteCtx *ctx, GridType::Point source,
                               GridType::Point target);
-  ClosestNodeInfo getClosestNode(const GridType::Point& pos);
+  ClosestNodeInfo getClosestNode(const GridType::Point &pos);
 
-  GridType::Point nextStep(const GridType::Point& from,
-                           const GridType::Point& to);
-  GridType::Point nextPoint(const GridType::Point& from,
-                            const GridType::Point& dir);
+  GridType::Point nextStep(const GridType::Point &from,
+                           const GridType::Point &to);
+  GridType::Point nextPoint(const GridType::Point &from,
+                            const GridType::Point &dir);
   float computeAngle(double dx, double dy);
 };
 
-}  // namespace Routing
-}  // namespace DistanceMap
+} // namespace Routing
+} // namespace DistanceMap
 
 #endif

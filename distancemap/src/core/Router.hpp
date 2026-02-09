@@ -3,6 +3,7 @@
 #include <vector>
 
 #include "GridTypes.hpp"
+#include <set>
 
 namespace DistanceMap {
 namespace Router {
@@ -36,12 +37,19 @@ struct RouteCtx {
   int routeSrcEdgeIdx2 = -1;
   int routeTgtEdgeIdx2 = -1;
 
-  enum class RouteType { None,
-                         NodeToNode,
-                         NodeToEdge,
-                         EdgeToNode,
-                         EdgeToEdge };
+  enum class RouteType { None, NodeToNode, NodeToEdge, EdgeToNode, EdgeToEdge };
   RouteType lastRouteType = RouteType::None;
+
+  // Walkabout Specific
+  struct WalkaboutState {
+    int levelIdx = -1;
+    int zoneIdx = -1;
+    std::set<int> visitedBaseNodes;
+    int currentBaseTargetNode = -1;
+    GridType::Point lockedTarget = {-1, -1};
+    bool hasLockedTarget = false;
+  };
+  WalkaboutState walkabout;
 };
 
 struct Info {
@@ -55,5 +63,5 @@ struct Info {
   int mStartCellY = 0;
 };
 
-}  // namespace Router
-}  // namespace DistanceMap
+} // namespace Router
+} // namespace DistanceMap

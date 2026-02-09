@@ -5,6 +5,9 @@
 #include "Router.hpp"
 
 namespace DistanceMap {
+namespace GridToGraph {
+struct AbstractLevel;
+}
 
 // In Godot I have 64x64 tiles, but cut up into 8x8 cells for collision
 // detection and when setting a tile map cell it uses that 8x8 cut up
@@ -14,28 +17,40 @@ namespace DistanceMap {
 constexpr int CELL_MULT = 8;
 
 class DISTANCEMAP_API NavigationAPI {
- public:
+public:
   virtual ~NavigationAPI() = default;
 
-  virtual float getMoveDirection(Router::RouteCtx* ctx, GridType::Vec2 from,
+  virtual float getMoveDirection(Router::RouteCtx *ctx, GridType::Vec2 from,
                                  GridType::Vec2 to, int type) = 0;
 
   // Calculates new position with wall sliding
-  virtual GridType::Vec2 resolveMove(const GridType::Vec2& currentPos, float angle, float distance);
+  virtual GridType::Vec2 resolveMove(const GridType::Vec2 &currentPos,
+                                     float angle, float distance);
 
   // Checks if a world position is valid (not inside a wall)
-  virtual bool validateMove(const GridType::Vec2& pos);
+  // Checks if a world position is valid (not inside a wall)
+  virtual bool validateMove(const GridType::Vec2 &pos);
 
- protected:
+  virtual const std::vector<GridToGraph::AbstractLevel> *
+  getAbstractLevels() const {
+    return nullptr;
+  }
+
+  const GridType::Grid &getGrid() const { return m_infoGrid; }
+  const Router::Info &getInfo() const { return m_info; }
+
+  bool checkBoundary(GridType::Point &pos) const;
+
+protected:
   // Info grid must be kept around. It will probably be from Graph so that's ok
-  const GridType::Grid& m_infoGrid;
+  const GridType::Grid &m_infoGrid;
   // Router::Info is often temp, so copy it
   const Router::Info m_info;
   const int m_gridWidth = 0;
   const int m_gridHeight = 0;
   const int m_cellWidth = 1;
   const int m_cellHeight = 1;
-  NavigationAPI(const GridType::Grid& infoGrid, const Router::Info& info);
+  NavigationAPI(const GridType::Grid &infoGrid, const Router::Info &info);
 };
 
-}  // namespace DistanceMap
+} // namespace DistanceMap
