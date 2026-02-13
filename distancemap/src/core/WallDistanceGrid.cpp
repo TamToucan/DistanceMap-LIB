@@ -7,11 +7,9 @@
 
 #include "WallDistanceGrid.hpp"
 
-#include <iostream>
 #include <limits>
 #include <queue>
 #include <vector>
-
 
 namespace DistanceMap {
 
@@ -36,7 +34,7 @@ std::vector<std::vector<int>> makeWallDistanceGrid(const GridType::Grid &grid) {
   // Add all wall cells to the queue and initialize their distances
   for (int r = 0; r < rows; ++r) {
     for (int c = 0; c < cols; ++c) {
-      if (grid[r][c]) {
+      if (grid[r][c] & GridType::WALL) {
         distanceGrid[r][c] = 0;
         bfsQueue.push({r, c});
       }

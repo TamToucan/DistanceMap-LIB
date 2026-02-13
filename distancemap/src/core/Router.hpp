@@ -48,6 +48,26 @@ struct RouteCtx {
     int currentBaseTargetNode = -1;
     GridType::Point lockedTarget = {-1, -1};
     bool hasLockedTarget = false;
+
+    // DeadEnd Support
+    int currentEdgeIdx = -1;
+    bool allowDeadEnds = true;
+    bool targetIsDeadEnd = false;
+    std::set<int> visitedDeadEnds;
+
+    // Edge Traversal Logic
+    std::set<int> visitedEdges;
+    int currentPathIdx = -1;
+
+    // Wander state
+    bool allowWander = true;
+    float wanderOffset = 0.0f;
+    float wanderTarget = 0.0f;
+    float wanderTimer = 0.0f;
+
+    // Tube Logic
+    float laneBias = 0.0f; // -1.0 to 1.0 (Left to Right)
+    GridType::Vec2 debugTubeTarget = {-1.0f, -1.0f};
   };
   WalkaboutState walkabout;
 };

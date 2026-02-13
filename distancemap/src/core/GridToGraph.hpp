@@ -118,6 +118,7 @@ struct Graph {
   std::vector<GridType::Point> baseNodes;
   std::vector<GridType::Point> deadEnds;
   std::vector<AbstractLevel> abstractLevels;
+  std::vector<std::vector<int>> wallDistanceGrid;
 };
 
 ////////////////////////////////////////////////////////////////////////////////
