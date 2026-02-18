@@ -68,6 +68,7 @@ struct RouteCtx {
     // Tube Logic
     float laneBias = 0.0f; // -1.0 to 1.0 (Left to Right)
     GridType::Vec2 debugTubeTarget = {-1.0f, -1.0f};
+    GridType::Vec2 smoothedTarget = {-1.0f, -1.0f};
   };
   WalkaboutState walkabout;
 };
