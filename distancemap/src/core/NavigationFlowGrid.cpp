@@ -12,9 +12,10 @@
 namespace DistanceMap {
 namespace Routing {
 
-NavigationFlowGrid::NavigationFlowGrid(const GridType::Grid& infoGrid,
-                                       const Router::Info& info)
-    : NavigationAPI(infoGrid, info), m_cacheValid(false), m_cachedTarget(-1, -1) {
+NavigationFlowGrid::NavigationFlowGrid(const GridType::Grid &infoGrid,
+                                       const Router::Info &info)
+    : NavigationAPI(infoGrid, info), m_cacheValid(false),
+      m_cachedTarget(-1, -1) {
   // Pre-allocate distance map with same dimensions as infoGrid
   m_distanceMap.resize(m_gridHeight, std::vector<Cell>(m_gridWidth));
   LOG_DEBUG("NavigationFlowGrid initialized");
@@ -22,14 +23,14 @@ NavigationFlowGrid::NavigationFlowGrid(const GridType::Grid& infoGrid,
 
 float NavigationFlowGrid::computeAngle(double dx, double dy) {
   if (dx == 0 && dy == 0) {
-    return 0.0;  // No movement
+    return 0.0; // No movement
   }
   return static_cast<float>(
       std::fmod(std::atan2(dy, dx) * (180.0 / MY_PI) + 360.0, 360.0));
 }
 
-GridType::Point NavigationFlowGrid::nextPoint(const GridType::Point& from,
-                                              const GridType::Point& dir) {
+GridType::Point NavigationFlowGrid::nextPoint(const GridType::Point &from,
+                                              const GridType::Point &dir) {
   return {from.first + dir.first, from.second + dir.second};
 }
 
@@ -56,7 +57,7 @@ void NavigationFlowGrid::computeDistanceMap(GridType::Point target) {
 
   // Priority queue: (distance, point)
   using QueueItem = std::pair<uint16_t, GridType::Point>;
-  auto cmp = [](const QueueItem& a, const QueueItem& b) {
+  auto cmp = [](const QueueItem &a, const QueueItem &b) {
     return a.first > b.first;
   };
   std::priority_queue<QueueItem, std::vector<QueueItem>, decltype(cmp)> queue(
@@ -86,7 +87,7 @@ void NavigationFlowGrid::computeDistanceMap(GridType::Point target) {
 
     // Explore all 8 neighbors
     for (int dirIdx = 0; dirIdx < 8; ++dirIdx) {
-      const auto& dir = GridType::directions8[dirIdx];
+      const auto &dir = GridType::directions8[dirIdx];
       int nx = x + dir.first;
       int ny = y + dir.second;
 
@@ -166,8 +167,8 @@ void NavigationFlowGrid::computeDistanceMap(GridType::Point target) {
   m_cachedTarget = target;
   m_cacheValid = true;
 
-  for (const auto& row : m_distanceMap) {
-    for (const auto& cell : row) {
+  for (const auto &row : m_distanceMap) {
+    for (const auto &cell : row) {
       if (cell.distance == std::numeric_limits<uint16_t>::max()) {
         LOG_DEBUG_CONT(" . " << " ");
       } else {
@@ -196,9 +197,14 @@ GridType::Point NavigationFlowGrid::getNextMove(GridType::Point source,
     // Check if still in wall
     srcCell = m_infoGrid[source.second][source.first];
     if (srcCell & GridType::WALL) {
-      LOG_ERROR("DistanceMap: Source " << source.first << "," << source.second
-                                       << " is in WALL");
-      return source;  // Can't move
+#if 0
+      static int spamCount = 0;
+      if (spamCount++ % 60 == 0) {
+        LOG_ERROR("DistanceMap: Source " << source.first << "," << source.second
+                                         << " is in WALL");
+      }
+#endif
+      return source; // Can't move
     }
   }
 
@@ -216,9 +222,11 @@ GridType::Point NavigationFlowGrid::getNextMove(GridType::Point source,
 
     // Check if still in wall
     if (m_infoGrid[target.second][target.first] & GridType::WALL) {
+#if 0
       LOG_ERROR("DistanceMap: Target " << target.first << "," << target.second
                                        << " is in WALL");
-      return source;  // Can't move
+#endif
+      return source; // Can't move
     }
   }
 
@@ -231,7 +239,7 @@ GridType::Point NavigationFlowGrid::getNextMove(GridType::Point source,
   }
 
   // Look up direction at source
-  const Cell& cell = m_distanceMap[source.second][source.first];
+  const Cell &cell = m_distanceMap[source.second][source.first];
 
   // Check if target is reachable
   if (cell.direction == NO_DIR ||
@@ -253,7 +261,7 @@ GridType::Point NavigationFlowGrid::getNextMove(GridType::Point source,
   }
 
   // Move in the computed direction
-  const auto& dir = GridType::directions8[cell.direction];
+  const auto &dir = GridType::directions8[cell.direction];
   GridType::Point next = nextPoint(source, dir);
 
   LOG_DEBUG("DistanceMap: " << source.first << "," << source.second << " -> "
@@ -264,7 +272,7 @@ GridType::Point NavigationFlowGrid::getNextMove(GridType::Point source,
   return next;
 }
 
-float NavigationFlowGrid::getMoveDirection(Router::RouteCtx* ctx,
+float NavigationFlowGrid::getMoveDirection(Router::RouteCtx *ctx,
                                            GridType::Vec2 from,
                                            GridType::Vec2 to, int type) {
   // Convert world coordinates to grid coordinates
@@ -296,7 +304,8 @@ float NavigationFlowGrid::getMoveDirection(Router::RouteCtx* ctx,
     return computeAngle(targetX - from.x, targetY - from.y);
   };
   // FIX: Enforce a reuse limit if it is 0/Infinite
-  if (ctx->reuseInit <= 0) ctx->reuseInit = 20;
+  if (ctx->reuseInit <= 0)
+    ctx->reuseInit = 20;
 
   // Check if we can reuse previous direction (optimization)
   if (ctx->type == type) {
@@ -315,7 +324,8 @@ float NavigationFlowGrid::getMoveDirection(Router::RouteCtx* ctx,
       bool allowReuse = isAdjacent && (--ctx->reuseCnt > 0);
 
       if (allowReuse) {
-        LOG_DEBUG("DistanceMap: Reusing direction (" << ctx->reuseCnt << " remaining)");
+        LOG_DEBUG("DistanceMap: Reusing direction (" << ctx->reuseCnt
+                                                     << " remaining)");
         ctx->didReuse = true;
 
         // Recompute angle based on precise position relative to the target cell
@@ -323,7 +333,8 @@ float NavigationFlowGrid::getMoveDirection(Router::RouteCtx* ctx,
         float nxtDir = computePreciseAngle(ctx->next);
 
         if (std::abs(nxtDir - ctx->curDir) > 0.1f) {
-          LOG_DEBUG("DistanceMap: Direction updated: " << ctx->curDir << " => " << nxtDir);
+          LOG_DEBUG("DistanceMap: Direction updated: " << ctx->curDir << " => "
+                                                       << nxtDir);
           ctx->curDir = nxtDir;
         } else {
           LOG_DEBUG("DistanceMap: Direction unchanged: " << ctx->curDir);
@@ -352,5 +363,5 @@ float NavigationFlowGrid::getMoveDirection(Router::RouteCtx* ctx,
   return ctx->curDir;
 }
 
-}  // namespace Routing
-}  // namespace DistanceMap
+} // namespace Routing
+} // namespace DistanceMap
