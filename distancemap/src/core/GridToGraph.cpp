@@ -2042,6 +2042,10 @@ Graph makeGraph(const Grid &floorGrid) {
   graph.routingGraph = Routing::buildSparseGraph(
       graph.baseNodes, graph.deadEnds, graph.baseEdges, graph.infoGrid);
 
+  LOG_INFO("==ABSTRACT GRAPH CONNECTIVITY");
+  Routing::buildAbstractConnectivity(graph.routingGraph, graph.abstractLevels,
+                                     graph.infoGrid, graph.baseNodes);
+
   LOG_INFO("## ======= GRAPH MADE =====");
   debugDump(graph);
   return graph;
