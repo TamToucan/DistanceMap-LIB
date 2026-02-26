@@ -71,6 +71,27 @@ struct RouteCtx {
     GridType::Vec2 smoothedTarget = {-1.0f, -1.0f};
   };
   WalkaboutState walkabout;
+
+  // Perlin Wander Specific
+  struct PerlinState {
+    float lastAngle = -1.0f;
+    float perlinTime = 0.0f;
+    float noiseSeed = -1.0f; // -1.0f means uninitialized
+
+    int state = 0; // 0 = WANDERING, 1 = ESCAPING
+    int currentZoneId = -1;
+    float boredomTimer = 0.0f;
+    int targetZoneId = -1;
+
+    // Agent-specific randomization
+    float boredomThreshold = 15.0f;
+    float perlinSpeed = 0.5f;
+
+    // Dead-End Escape Lock
+    bool isLocked = false;
+    float lockedAngle = -1.0f;
+  };
+  PerlinState perlin;
 };
 
 struct Info {
