@@ -105,31 +105,20 @@ void NavigationFlowGrid::computeDistanceMap(GridType::Point target) {
         continue;
       }
 
-#if 0
       // Corner Checking:
       // If moving diagonally (odd dirIdx), check adjacent cardinals.
       // If either is a WALL, we can't move diagonally (corner cut).
       if (dirIdx % 2 != 0) {
-        int c1 = (dirIdx - 1) & 7;  // Previous Cardinal
-        int c2 = (dirIdx + 1) % 8;  // Next Cardinal
-
-        // Can't do this because can have a path which is just
-        // a diagonal through a corner. i.e
-        //  #  #
-        //  #  #
-        //  # ####
-        //  ##
-        //  ######
+        int c1 = (dirIdx - 1) & 7; // Previous Cardinal
+        int c2 = (dirIdx + 1) % 8; // Next Cardinal
 
         // Helper to check if a neighbor is a blocking wall
-        // FIX: Treat BOUNDARY as blocking for CORNER checks to avoid cutting
-        // through walls
+        // Treat BOUNDARY as blocking for CORNER checks to avoid cutting
+        // through physics walls
         auto isBlocking = [&](int cx, int cy) {
           if (cx < 0 || cx >= cols || cy < 0 || cy >= rows)
-            return true;  // Bounds check (treat as wall)
+            return true; // Bounds check (treat as wall)
           int cell = m_infoGrid[cy][cx];
-          // We MUST block boundaries here, otherwise we try to walk through the
-          // wall corner
           return (cell & GridType::WALL) != 0;
         };
 
@@ -139,8 +128,7 @@ void NavigationFlowGrid::computeDistanceMap(GridType::Point target) {
                        y + GridType::directions8[c2].second)) {
           continue;
         }
-    }
-#endif
+      }
 
       // Calculate new distance
       // Cost: 10 for Cardinal, 14 for Diagonal
@@ -324,8 +312,6 @@ float NavigationFlowGrid::getMoveDirection(Router::RouteCtx *ctx,
       bool allowReuse = isAdjacent && (--ctx->reuseCnt > 0);
 
       if (allowReuse) {
-        LOG_DEBUG("DistanceMap: Reusing direction (" << ctx->reuseCnt
-                                                     << " remaining)");
         ctx->didReuse = true;
 
         // Recompute angle based on precise position relative to the target cell
@@ -333,12 +319,11 @@ float NavigationFlowGrid::getMoveDirection(Router::RouteCtx *ctx,
         float nxtDir = computePreciseAngle(ctx->next);
 
         if (std::abs(nxtDir - ctx->curDir) > 0.1f) {
-          LOG_DEBUG("DistanceMap: Direction updated: " << ctx->curDir << " => "
-                                                       << nxtDir);
           ctx->curDir = nxtDir;
-        } else {
-          LOG_DEBUG("DistanceMap: Direction unchanged: " << ctx->curDir);
         }
+
+        LOG_DEBUG("FLOW: Reuse [" << ctx->next.first << "," << ctx->next.second
+                                  << "] Ang: " << ctx->curDir);
         return ctx->curDir;
       }
     }
@@ -347,7 +332,12 @@ float NavigationFlowGrid::getMoveDirection(Router::RouteCtx *ctx,
   // Update context
   ctx->from = fromPnt;
   ctx->to = toPnt;
-  ctx->type = type;
+
+  // Track if we are switching navigator types, which resets reuse
+  if (ctx->type != type) {
+    ctx->type = type;
+    ctx->reuseCnt = 0;
+  }
 
   ctx->reuseCnt = ctx->reuseInit;
 
@@ -355,10 +345,25 @@ float NavigationFlowGrid::getMoveDirection(Router::RouteCtx *ctx,
   ctx->next = getNextMove(fromPnt, toPnt);
 
   // Compute angle (Precise)
-  ctx->curDir = computePreciseAngle(ctx->next);
+  float candidateDir = computePreciseAngle(ctx->next);
 
-  LOG_DEBUG("DistanceMap: Next=" << ctx->next.first << "," << ctx->next.second
-                                 << " Angle=" << ctx->curDir);
+  // Oscillation Hysteresis:
+  // If the new field suggests a near-perfect flip (>150 deg) compared to our
+  // current established heading, and we are NOT yet at the destination tile,
+  // hold the course for one frame. This prevents jitter at path-tie boundaries.
+  if (ctx->curDir >= 0.0f && fromPnt != toPnt) {
+    float diff = std::abs(candidateDir - ctx->curDir);
+    while (diff > 180.0f)
+      diff = 360.0f - diff;
+    if (diff > 150.0f) {
+      return ctx->curDir;
+    }
+  }
+
+  ctx->curDir = candidateDir;
+
+  LOG_DEBUG("FLOW: New [" << ctx->next.first << "," << ctx->next.second
+                          << "] Ang: " << ctx->curDir);
 
   return ctx->curDir;
 }

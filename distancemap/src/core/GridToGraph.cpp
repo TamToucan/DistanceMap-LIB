@@ -641,7 +641,7 @@ void restoreWalls(Grid &infoGrid, const Grid &floorGrid) {
 }
 
 /////////////////////////////////////////////////////////////////////////////////////////
-Path simplifyPath(const Path &inPath) {
+Path simplifyPath(const Path &inPath, const Grid &grid) {
   Path simplePath;
   if (inPath.size() < 3)
     return inPath;
@@ -656,15 +656,26 @@ Path simplifyPath(const Path &inPath) {
     // Check if "prev -> next" is a valid diagonal move
     int dx = next.first - prev.first;
     int dy = next.second - prev.second;
-    LOG_DEBUG("SIMPLIFY: " << dx << "" << dy);
     if (std::abs(dx) <= 1 && std::abs(dy) <= 1) {
-      // Skip the current point (diagonal move is valid)
-      simplePath.push_back(next);
-      i++;
-      LOG_DEBUG("   => skip " << curr.first << "," << curr.second);
+      // Check if the inner corner clips a solid tile
+      bool isSafe = true;
+      if (std::abs(dx) == 1 && std::abs(dy) == 1) {
+        int corner1 = grid[prev.second][next.first];
+        int corner2 = grid[next.second][prev.first];
+        if (!isPath(corner1) || !isPath(corner2)) {
+          isSafe = false;
+        }
+      }
+
+      if (isSafe) {
+        // Skip the current point (diagonal move is valid)
+        simplePath.push_back(next);
+        i++;
+      } else {
+        simplePath.push_back(curr);
+      }
     } else {
       simplePath.push_back(curr);
-      LOG_DEBUG("   => keep " << curr.first << "," << curr.second);
     }
   }
 
@@ -791,7 +802,7 @@ private:
     }
 
     // Simplify the path so wont get duplicates
-    Path simplePath = simplifyPath(path);
+    Path simplePath = simplifyPath(path, grid);
 
     if (simplePath.size() != path.size()) {
       LOG_DEBUG_CONT("#GetEdge INPUT  ");
@@ -1560,11 +1571,9 @@ generateAbstractZones(ZoneGrid &zoneGrid, const Grid &grid,
       }
     }
 
-    // Add the edge to ALL zones it belongs to
+    // Add the edge to zones it belongs to
     for (int zoneIdx : zonesToAdd) {
-      if (std::find(zones[zoneIdx].baseEdgeIdxs.begin(),
-                    zones[zoneIdx].baseEdgeIdxs.end(),
-                    edgeIdx) == zones[zoneIdx].baseEdgeIdxs.end()) {
+      if (zones[zoneIdx].baseEdgeIdxSet.insert(edgeIdx).second) {
         zones[zoneIdx].baseEdgeIdxs.push_back(edgeIdx);
         LOG_DEBUG("    Added edge " << edgeIdx << " to zone " << zoneIdx);
       } else {
@@ -1607,6 +1616,7 @@ generateAbstractZones(ZoneGrid &zoneGrid, const Grid &grid,
       // If node and/or new zone boundary then add to zone's list
       if (cell & NODE) {
         zones[curZone].baseNodeIdxs.push_back(idx);
+        zones[curZone].baseNodeIdxSet.insert(idx);
       }
     }
   }

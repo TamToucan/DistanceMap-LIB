@@ -1,5 +1,4 @@
 #include "NavigationAPI.hpp"
-#include "Debug.h"
 
 #include <cmath>
 
@@ -30,57 +29,33 @@ GridType::Vec2 NavigationAPI::resolveMove(const GridType::Vec2 &currentPos,
   float rad = angle * 3.14159265f / 180.0f;
   float dx = std::cos(rad) * distance;
   float dy = std::sin(rad) * distance;
-
   GridType::Vec2 nextPos;
   nextPos.x = currentPos.x + dx;
   nextPos.y = currentPos.y + dy;
 
-  // Try full move
-  if (validateMove(nextPos)) {
-    LOG_INFO("XXX VALID nextPos: " << nextPos.x << "," << nextPos.y);
-    return nextPos;
-  }
-
-  // Try Slide X
-  GridType::Vec2 slideX = currentPos;
-  slideX.x += dx;
-  if (std::abs(dx) > 0.001f && validateMove(slideX)) {
-    LOG_INFO("XXX SLIDE X: " << slideX.x << "," << slideX.y);
-    return slideX;
-  }
-
-  // Try Slide Y
-  GridType::Vec2 slideY = currentPos;
-  slideY.y += dy;
-  if (std::abs(dy) > 0.001f && validateMove(slideY)) {
-    LOG_INFO("XXX SLIDE Y: " << slideY.x << "," << slideY.y);
-    return slideY;
-  }
-
-  // Blocked
-  LOG_INFO("XXX BLOCKED: " << currentPos.x << "," << currentPos.y);
-  return currentPos;
+  // Bypass the abstract, restrictive 64x64 binary grid collision.
+  // Game.cpp will apply this full move vector, and Level::resolveCollision (the
+  // physical simulator) will perfectly handle tangent pushing and proper agent
+  // cornering on sloped polygons.
+  return nextPos;
 }
 
 bool NavigationAPI::checkBoundary(GridType::Point &pos) const {
   // Check if in a wall
   int srcCell = m_infoGrid[pos.second][pos.first];
-  LOG_DEBUG("checkBoundary: " << pos.first << "," << pos.first
-                              << " src: " << std::hex << srcCell << std::dec);
+
   if (srcCell & GridType::WALL) {
     // If boundary then use dir to move ouit of wall
     if (srcCell & GridType::BOUNDARY) {
       int dirIdx = srcCell & GridType::DIR_MASK;
       pos.first += GridType::directions8[dirIdx].first;
       pos.second += GridType::directions8[dirIdx].second;
-      LOG_DEBUG("BOUNDARY => src: " << pos.first << "," << pos.second);
     }
 
     // If still in wall then error
     srcCell = m_infoGrid[pos.second][pos.first];
     if (srcCell & GridType::WALL) {
-      LOG_ERROR(pos.first << "," << pos.second
-                          << " is WALL: SRC ***************************");
+
       return false;
     }
   }
