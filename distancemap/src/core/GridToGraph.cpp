@@ -1666,46 +1666,6 @@ void generateZoneBoundaries(AbstractLevel &abstractLevel) {
   }
 }
 
-#if 0
-// Function to compute the shortest path using BFS (fallback when no direct BaseEdge exists)
-std::vector<std::pair<int, int>> computeShortestPath(
-    const std::pair<int, int>& start,
-    const std::pair<int, int>& end,
-    const ZoneGrid& zoneGrid)
-{
-    std::queue<std::vector<std::pair<int, int>>> q;
-    std::unordered_set<std::pair<int, int>, PairHash> visited;
-
-    q.push({ start });
-    visited.insert(start);
-
-    while (!q.empty()) {
-        std::vector<std::pair<int, int>> path = q.front();
-        q.pop();
-
-        std::pair<int, int> current = path.back();
-        if (current == end) {
-            return path; // Shortest path found
-        }
-
-        for (const auto& [dx, dy] : directions8) {
-            std::pair<int, int> next = { current.first + dx, current.second + dy };
-
-            if (zoneGrid[next.second][next.first].closestAbstractNodeIdx == -1 || visited.count(next)) {
-                continue;
-            }
-
-            visited.insert(next);
-            std::vector<std::pair<int, int>> newPath = path;
-            newPath.push_back(next);
-            q.push(newPath);
-        }
-    }
-
-    return {}; // No path found (shouldn't happen in a valid map)
-}
-#endif
-
 // Main function to generate extra AbstractEdges
 // This is needed since the current AbstractEdges might not
 // connect every zone ie. for each pair of adjacnent zones

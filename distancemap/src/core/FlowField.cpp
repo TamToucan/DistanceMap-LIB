@@ -80,6 +80,7 @@ SubGrid extractZoneSubGrid(
       if (zoneGrid[y][x].closestAbstractNodeIdx == targetZone &&
           (origGrid[y][x] & GridType::WALL) == 0) {
         subGrid.grid[idx] = 0; // Walkable.
+        subGrid.floorCells.push_back({x, y});
       } else {
         subGrid.grid[idx] =
             GridType::WALL; // Not part of the zone or is a wall.
@@ -131,7 +132,7 @@ generateFlowFieldDial(const SubGrid &subGrid,
   for (const auto &bi : sinks) {
     int x = bi.sink.first;
     int y = bi.sink.second;
-    int idx = SubGrid::indexFor(x, y, cols);
+    int idx = SubGrid::indexForLocal(x, y, cols);
     costFlowField[idx] =
         0 | SINK_BIT | bi.exitDirIdx; // cost 0, SINK, dir to adjacent zone
     buckets[0].push_back(idx);
@@ -162,11 +163,11 @@ generateFlowFieldDial(const SubGrid &subGrid,
       int nx = x + GridType::directions8[d].first;
       int ny = y + GridType::directions8[d].second;
       // Check bounds
-      if (!subGrid.isInside(nx, ny))
+      if (!subGrid.isInsideLocal(nx, ny))
         continue;
 
       // Check wall
-      int nIdx = SubGrid::indexFor(nx, ny, cols);
+      int nIdx = SubGrid::indexForLocal(nx, ny, cols);
       if (grid[nIdx] & GridType::WALL)
         continue;
 
@@ -245,7 +246,7 @@ void debugFlow(int lev, int curZone, int adjacentZone, SubGrid subGrid) {
   const auto &flowField = subGrid.getFlow(adjacentZone);
   for (int y = 0; y < rows; ++y) {
     for (int x = 0; x < cols; ++x) {
-      int idx = SubGrid::indexFor(x, y, cols);
+      int idx = SubGrid::indexForLocal(x, y, cols);
       uint16_t costDir = flowField[idx];
       int cost = costDir >> 8;
       int dir = costDir & 0xFF;

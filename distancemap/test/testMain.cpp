@@ -18,10 +18,10 @@ struct FlowField::SubGrid subgrid;
 void debugFlow(FlowField::SubGrid subGrid) {
   int cols = subGrid.width;
   int rows = subGrid.height;
-  const auto& flowField = subGrid.getFlow(0);
+  const auto &flowField = subGrid.getFlow(0);
   for (int y = 0; y < rows; ++y) {
     for (int x = 0; x < cols; ++x) {
-      int idx = FlowField::SubGrid::indexFor(x, y, cols);
+      int idx = FlowField::SubGrid::indexForLocal(x, y, cols);
       uint16_t costDir = flowField[idx];
       int cost = costDir >> 8;
       int dir = costDir & 0xFF;
@@ -37,7 +37,7 @@ std::pair<float, float> computeDirection(float angleDeg) {
   return {std::cos(radians), std::sin(radians)};
 }
 
-int main(int argc, char** argv) {
+int main(int argc, char **argv) {
   auto grid = GridToGraph::readGridFromFile("GRID.txt");
 
   /*
@@ -57,13 +57,14 @@ int main(int argc, char** argv) {
 
   DistanceMap::GridType::Vec2 from(300, 250);
   DistanceMap::GridType::Vec2 to(1950, 1086);
-  DistanceMap::Router::RouteCtx* ctx = new DistanceMap::Router::RouteCtx();
+  DistanceMap::Router::RouteCtx *ctx = new DistanceMap::Router::RouteCtx();
   ctx->type = -1;
   int count = 2000;
   int mv = 1;
   bool reached_target = false;
-  DistanceMap::GridType::Point toPnt = {(int)(to.x / (info.mCellWidth * DistanceMap::CELL_MULT)),
-                                        (int)(to.y / (info.mCellHeight * DistanceMap::CELL_MULT))};
+  DistanceMap::GridType::Point toPnt = {
+      (int)(to.x / (info.mCellWidth * DistanceMap::CELL_MULT)),
+      (int)(to.y / (info.mCellHeight * DistanceMap::CELL_MULT))};
   DistanceMap::GridType::Point prevPnt = toPnt;
   do {
     DistanceMap::GridType::Point fromPnt = {
@@ -96,8 +97,9 @@ int main(int argc, char** argv) {
     std::pair<float, float> mv = computeDirection(ang);
     from.x += mv.first * 13;
     from.y += mv.second * 13;
-    DistanceMap::GridType::Point nw = {(int)(from.x / (info.mCellWidth * DistanceMap::CELL_MULT)),
-                                       (int)(from.y / (info.mCellHeight * DistanceMap::CELL_MULT))};
+    DistanceMap::GridType::Point nw = {
+        (int)(from.x / (info.mCellWidth * DistanceMap::CELL_MULT)),
+        (int)(from.y / (info.mCellHeight * DistanceMap::CELL_MULT))};
     std::cerr << "CTV MV " << mv.first << "," << mv.second << "  ang " << ang
               << " cell: " << fromPnt.first << "," << fromPnt.second << " -> "
               << nw.first << "," << nw.second << std::endl;
