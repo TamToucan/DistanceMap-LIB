@@ -1366,7 +1366,7 @@ std::vector<AbstractNode> createAbstractNodes(const std::vector<Point> &nodes,
   for (size_t i = 0; i < nodes.size(); ++i) {
     int clusterId = clusterLabels[i];
     // Skip noise points (outliers)
-    if (clusterId < 0) {
+    if (clusterId == -1) {
       continue;
     }
     auto &cluster = clusters[clusterId]; // inserts if missing
