@@ -8,7 +8,6 @@
 #include <utility>
 #include <vector>
 
-
 namespace DistanceMap {
 namespace GridType {
 
@@ -115,9 +114,9 @@ struct Edge {
 };
 
 struct AbstractNode {
-  std::vector<int> baseNodes; // Indices of nodes in the cluster
-  GridType::Point center;     // Geometric center of the cluster
-  int baseCenterNode;         // index of closest baseNode
+  std::vector<int> baseNodes;   // Indices of nodes in the cluster
+  GridType::Point center{0, 0}; // Geometric center (+= used so init to 0)
+  int baseCenterNode{-1};       // index of closest baseNode
 };
 
 struct AbstractEdge {

@@ -1362,20 +1362,26 @@ std::vector<AbstractNode> createAbstractNodes(const std::vector<Point> &nodes,
 
   // Step 2: Create Abstract Nodes
   std::unordered_map<int, AbstractNode> clusters;
+  clusters.reserve(nodes.size());
   for (size_t i = 0; i < nodes.size(); ++i) {
     int clusterId = clusterLabels[i];
     // Skip noise points (outliers)
     if (clusterId < 0) {
       continue;
     }
-
-    if (clusters.find(clusterId) == clusters.end()) {
-      clusters[clusterId] = {{}, {0, 0}, -1};
+    auto &cluster = clusters[clusterId]; // inserts if missing
+    cluster.baseNodes.push_back(static_cast<int>(i));
+    cluster.center.first += nodes[i].first;
+    cluster.center.second += nodes[i].second;
+  }
+  // FIX: If all the nodes are noise, create a cluster for each node
+  // i.e. each base node is an abstract node
+  if (clusters.empty()) {
+    for (size_t i = 0; i < nodes.size(); ++i) {
+      auto &cluster = clusters[i];
+      cluster.baseNodes.push_back(static_cast<int>(i));
+      cluster.center = nodes[i];
     }
-
-    clusters[clusterId].baseNodes.push_back(static_cast<int>(i));
-    clusters[clusterId].center.first += nodes[i].first;
-    clusters[clusterId].center.second += nodes[i].second;
   }
 
   // Calculate the center of each cluster
@@ -1401,7 +1407,6 @@ std::vector<AbstractNode> createAbstractNodes(const std::vector<Point> &nodes,
     }
     abNode.baseCenterNode = baseIdx;
     closestMap[idx] = baseIdx;
-    const auto &f = nodes[abNode.baseCenterNode];
     ++idx;
   }
 
@@ -1799,6 +1804,7 @@ std::vector<AbstractLevel> makeAbstractLevels(const Graph &graph) {
       if (!ablv.abstractNodes.empty()) {
         abstractLevels.pop_back();
       }
+      LOG_INFO("   => NO ABNODEs => BREAK");
       break;
     }
     debugAbstractNodes(pass, ablv, graph);

@@ -38,6 +38,7 @@ std::pair<float, float> computeDirection(float angleDeg) {
 }
 
 int main(int argc, char **argv) {
+  SET_DEBUG("ALL");
   auto grid = GridToGraph::readGridFromFile("GRID.txt");
 
   /*
