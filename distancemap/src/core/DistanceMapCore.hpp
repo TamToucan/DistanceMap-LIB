@@ -24,6 +24,8 @@ public:
   void initialize(const std::vector<std::vector<int>> &grid,
                   const Router::Info &info);
 
+  const GridToGraph::Graph &getGraph() const { return m_graph; }
+
   std::unique_ptr<NavigationAPI> makeNavigator(NavigatorType type);
 
   float getMoveAngle(const std::unique_ptr<NavigationAPI> &pNavigator,

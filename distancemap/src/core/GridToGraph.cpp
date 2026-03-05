@@ -1361,6 +1361,7 @@ std::vector<AbstractNode> createAbstractNodes(const std::vector<Point> &nodes,
   std::vector<int> clusterLabels = dbscan(nodes, clusteringEps, minClusterSize);
 
   // Step 2: Create Abstract Nodes
+  // NOTE: We temporarily use center to calc the geometric center
   std::unordered_map<int, AbstractNode> clusters;
   clusters.reserve(nodes.size());
   for (size_t i = 0; i < nodes.size(); ++i) {
@@ -1384,7 +1385,10 @@ std::vector<AbstractNode> createAbstractNodes(const std::vector<Point> &nodes,
     }
   }
 
-  // Calculate the center of each cluster
+  // Calculate the geometric center of each cluster
+  // NOTE: This will be overwritten by the closest base node in Step 4
+  // but it is used to find the closest base node in Step 4
+  // This is done to ensure center is a FLOOR tile position
   LOG_DEBUG("##CREATE ANODEs. clusters: " << clusters.size());
   for (auto &[i, cluster] : clusters) {
     int totalPoints = cluster.baseNodes.size();
@@ -1398,6 +1402,7 @@ std::vector<AbstractNode> createAbstractNodes(const std::vector<Point> &nodes,
   }
 
   // Step 4: Assign closest base node to each abstract node
+  // NOTE: We overwrite the center with the closest base node
   std::unordered_map<int, int> closestMap;
   int idx = 0;
   for (auto &abNode : abstractNodes) {
@@ -1406,6 +1411,7 @@ std::vector<AbstractNode> createAbstractNodes(const std::vector<Point> &nodes,
       LOG_ERROR("Could not find central node for idx: " << idx);
     }
     abNode.baseCenterNode = baseIdx;
+    abNode.center = nodes[baseIdx]; // Guarantee center is a valid floor point
     closestMap[idx] = baseIdx;
     ++idx;
   }
@@ -1557,10 +1563,10 @@ generateAbstractZones(ZoneGrid &zoneGrid, const Grid &grid,
     int fromZone = zoneGrid[from.second][from.first].closestAbstractNodeIdx;
     int toZone = zoneGrid[to.second][to.first].closestAbstractNodeIdx;
 
-    LOG_DEBUG("  Processing edge " << edgeIdx << " from (" << from.first << ","
-                                   << from.second << ") to (" << to.first << ","
-                                   << to.second << ")"
-                                   << " fromZone=" << fromZone << " toZone=");
+    LOG_DEBUG("  Processing edge "
+              << edgeIdx << " from (" << from.first << "," << from.second
+              << ") to (" << to.first << "," << to.second << ")"
+              << " fromZone=" << fromZone << " toZone=" << toZone);
 
     // Add the edge to ALL zones it passes through (fromZone and toZone)
     std::vector<int> zonesToAdd = {fromZone, toZone};
@@ -1800,10 +1806,7 @@ std::vector<AbstractLevel> makeAbstractLevels(const Graph &graph) {
         createAbstractNodes(graph.baseNodes, 5.0, 2 * pass + 2);
     LOG_INFO("   => ABNODEs: " << ablv.abstractNodes.size());
     // Check we actually got some nodes
-    if (ablv.abstractNodes.size() < 2) {
-      if (!ablv.abstractNodes.empty()) {
-        abstractLevels.pop_back();
-      }
+    if (ablv.abstractNodes.empty()) {
       LOG_INFO("   => NO ABNODEs => BREAK");
       break;
     }
