@@ -30,10 +30,10 @@ set(DMAP_SOURCES
     "WallDistanceGrid.hpp"
 )
 
-# Define Shared Library
-add_library(${DMAP_LIB_NAME} SHARED ${DMAP_SOURCES})
+# Define Static Library
+add_library(${DMAP_LIB_NAME} STATIC ${DMAP_SOURCES})
 
-target_compile_definitions(${DMAP_LIB_NAME} PRIVATE DISTANCEMAP_EXPORTS)
+# target_compile_definitions(${DMAP_LIB_NAME} PRIVATE DISTANCEMAP_EXPORTS)
 
 # Include Directories
 target_include_directories(${DMAP_LIB_NAME} PUBLIC
@@ -42,7 +42,7 @@ target_include_directories(${DMAP_LIB_NAME} PUBLIC
 )
 
 # Properties
-set_target_properties(${DMAP_LIB_NAME} PROPERTIES WINDOWS_EXPORT_ALL_SYMBOLS ON)
+# set_target_properties(${DMAP_LIB_NAME} PROPERTIES WINDOWS_EXPORT_ALL_SYMBOLS ON)
 if(NOT MSVC)
     set_target_properties(${DMAP_LIB_NAME} PROPERTIES PREFIX "")
 endif()

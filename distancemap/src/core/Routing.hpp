@@ -7,7 +7,7 @@
 #include "GridTypes.hpp"
 
 
-#ifdef _WIN32
+#if defined(_WIN32) && !defined(LOTT_STATIC)
 #ifdef GDDISTANCEMAP_EXPORTS // Must match your project name
 #define GD_API __declspec(dllexport)
 #else
