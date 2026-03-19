@@ -641,11 +641,13 @@ void restoreWalls(Grid &infoGrid, const Grid &floorGrid) {
 }
 
 /////////////////////////////////////////////////////////////////////////////////////////
-Path simplifyPath(const Path &inPath, const Grid &grid) {
+
+Path simplifyPath(const Path &inPath, const Grid &floorGrid) {
   Path simplePath;
   if (inPath.size() < 3)
     return inPath;
 
+  LOG_DEBUG("simplifyPath: inPath.size():" << inPath.size());
   simplePath.push_back(inPath[0]);
 
   for (size_t i = 1; i < inPath.size() - 1; i++) {
@@ -653,28 +655,42 @@ Path simplifyPath(const Path &inPath, const Grid &grid) {
     const auto &curr = inPath[i];
     const auto &next = inPath[i + 1];
 
+    LOG_DEBUG("  idx:" << i << " prev:" << prev.first << "," << prev.second
+                       << " curr:" << curr.first << "," << curr.second
+                       << " next:" << next.first << "," << next.second);
     // Check if "prev -> next" is a valid diagonal move
     int dx = next.first - prev.first;
     int dy = next.second - prev.second;
     if (std::abs(dx) <= 1 && std::abs(dy) <= 1) {
       // Check if the inner corner clips a solid tile
       bool isSafe = true;
+#if 1
       if (std::abs(dx) == 1 && std::abs(dy) == 1) {
-        int corner1 = grid[prev.second][next.first];
-        int corner2 = grid[next.second][prev.first];
-        if (!isPath(corner1) || !isPath(corner2)) {
+        int corner1 = floorGrid[prev.second][next.first];
+        int corner2 = floorGrid[next.second][prev.first];
+        LOG_DEBUG("      DIAG c1: "
+                  << next.first << "," << prev.second << " => " << std::hex
+                  << corner1 << " c2: " << prev.first << "," << next.second
+                  << " => " << std::hex << corner2 << std::dec);
+        // If corner1 or 2 is WALL (not-floor) then cutting cornder
+        // => don't use diagonal move
+        if (!corner1 || !corner2) {
+          LOG_DEBUG("      => cutting");
           isSafe = false;
         }
       }
-
+#endif
       if (isSafe) {
         // Skip the current point (diagonal move is valid)
         simplePath.push_back(next);
+        LOG_DEBUG("  => store NXT (inc i)");
         i++;
       } else {
+        LOG_DEBUG("  => store CUR");
         simplePath.push_back(curr);
       }
     } else {
+      LOG_DEBUG("  => store CUR");
       simplePath.push_back(curr);
     }
   }
@@ -706,10 +722,12 @@ class EdgeAdder {
   std::set<Edge, EdgeComparator> edges;
 
   const Grid &grid;
+  const Grid &floorGrid;
   std::set<std::pair<int, int>> adjacentNodePairs;
 
 public:
-  EdgeAdder(const Grid &g) : grid(g) {}
+  // Grid has NODE, DEND, PATH, EMPTY (must be 0)
+  EdgeAdder(const Grid &g, const Grid &f) : grid(g), floorGrid(f) {}
 
   // Accessor Methods
   const std::set<Edge, EdgeComparator> &getEdges() { return edges; }
@@ -802,7 +820,7 @@ private:
     }
 
     // Simplify the path so wont get duplicates
-    Path simplePath = simplifyPath(path, grid);
+    Path simplePath = simplifyPath(path, floorGrid);
 
     if (simplePath.size() != path.size()) {
       LOG_DEBUG_CONT("#GetEdge INPUT  ");
@@ -829,6 +847,7 @@ Path followPath(int startX, int startY, EdgeAdder &edgeAdder,
   LOG_DEBUG("## followPath " << startX << "," << startY);
   // If we fail to find a valid path, return empty
   Path emptyPath;
+  // Grid has NODE, DEND, PATH, EMPTY (must be 0)
   const Grid &grid = edgeAdder.getGrid();
 
   // Directions in your preferred order: up, left, right, down, then diagonals
@@ -850,9 +869,7 @@ Path followPath(int startX, int startY, EdgeAdder &edgeAdder,
   auto markPathVisited = [&](int x, int y) { tempVisited[y][x] = true; };
 
   // If the start cell is PATH, mark it visited in the temp array
-  if ((grid[startY][startX] != 0)                       // not empty
-      && ((grid[startY][startX] & (NODE | DEND)) == 0)) // i.e., it's PATH
-  {
+  if (isPath(grid[startY][startX])) {
     markPathVisited(startX, startY);
   }
 
@@ -1016,7 +1033,10 @@ Path followPath(int startX, int startY, EdgeAdder &edgeAdder,
   return emptyPath;
 }
 
-std::vector<Edge> findEdges(const std::vector<std::vector<int>> &grid,
+//
+// Grid has NODE, DEND, PATH, EMPTY (must be 0)
+//
+std::vector<Edge> findEdges(const Grid &grid, const Grid &floorGrid,
                             const std::vector<Point> &nodes,
                             const std::vector<Point> &deadEnds) {
   LOG_INFO("##FINDEDGES nodes:" << nodes.size()
@@ -1025,7 +1045,7 @@ std::vector<Edge> findEdges(const std::vector<std::vector<int>> &grid,
   const int cols = (int)grid[0].size();
   std::vector<std::vector<bool>> visited(rows, std::vector<bool>(cols, false));
 
-  EdgeAdder edgeAdder(grid);
+  EdgeAdder edgeAdder(grid, floorGrid);
 
   for (int y = 0; y < rows; ++y) {
     for (int x = 0; x < cols; ++x) {
@@ -1049,12 +1069,12 @@ std::vector<Edge> findEdges(const std::vector<std::vector<int>> &grid,
 }
 
 std::vector<Edge> findNodeEdges(const std::vector<Point> &nodes,
-                                const std::vector<std::vector<int>> &grid) {
+                                const Grid &grid, const Grid &floorGrid) {
   const int rows = (int)grid.size();
   const int cols = (int)grid[0].size();
   std::vector<std::vector<bool>> visited(rows, std::vector<bool>(cols, false));
 
-  EdgeAdder edgeAdder(grid);
+  EdgeAdder edgeAdder(grid, floorGrid);
 
   LOG_INFO("## FIND NODE EDGES for " << nodes.size() << " unconnected nodes");
   for (const auto &n : nodes) {
@@ -1088,6 +1108,7 @@ std::vector<Edge> findNodeEdges(const std::vector<Point> &nodes,
 //
 
 BaseGraph fixBaseEdges(std::vector<Edge> &baseEdges, const Grid &infoGrid,
+                       const Grid &floorGrid,
                        const std::vector<Point> &baseNodes) {
   // First Make a graph edgeNode1 -> list of (edgeNode2, edgeIndex, 1->2 flag,
   // cost)
@@ -1107,7 +1128,8 @@ BaseGraph fixBaseEdges(std::vector<Edge> &baseEdges, const Grid &infoGrid,
   }
 
   // Find the edges for those nodes
-  std::vector<Edge> connections = findNodeEdges(unconnectedNodes, infoGrid);
+  std::vector<Edge> connections =
+      findNodeEdges(unconnectedNodes, infoGrid, floorGrid);
 
   // Make an EdgeComparator set of all current edges
   GridToGraph::EdgeComparator comp;
@@ -1862,6 +1884,7 @@ Graph makeGraph(const Grid &floorGrid) {
   graph.infoGrid = floorGrid;
   // ## DEBUG
   {
+    // Invert floor grid so EMPTY is wall pixel
     auto tempGrid = graph.infoGrid;
 
     for (auto &r : tempGrid) {
@@ -1902,8 +1925,10 @@ Graph makeGraph(const Grid &floorGrid) {
 
   //
   // Find all the BaseEdges connecting all the NODE and DENDs
+  // - Need floorGrid to check for cutting corner on diagonal moves
   //
-  graph.baseEdges = findEdges(graph.infoGrid, graph.baseNodes, graph.deadEnds);
+  graph.baseEdges =
+      findEdges(graph.infoGrid, floorGrid, graph.baseNodes, graph.deadEnds);
 
   //
   // Unfortunately there are a few scenarios that dont connect. Basically
@@ -1919,7 +1944,7 @@ Graph makeGraph(const Grid &floorGrid) {
   // list of nodes. Any new edges are added to the complete list
   //
   graph.baseGraph =
-      fixBaseEdges(graph.baseEdges, graph.infoGrid, graph.baseNodes);
+      fixBaseEdges(graph.baseEdges, graph.infoGrid, floorGrid, graph.baseNodes);
 
   //
   // Mark the edges in the infoGrid and their index
