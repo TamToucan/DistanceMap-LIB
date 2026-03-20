@@ -582,45 +582,10 @@ float NavigationGraph::getMoveDirection(Router::RouteCtx *ctx,
             << " last: " << ((int)ctx->lastRouteType)
             << " ctxType: " << ctx->type << " type: " << type);
 
-  if (ctx->type == type) {
-    auto dx = ctx->next.first - fromPnt.first;
-    auto dy = ctx->next.second - fromPnt.second;
-    if (dx || dy) {
-      // Only allow reuse if the next point is adjacent.
-      // If it's far away, it implies we are in a fallback mode (e.g. moving to
-      // target after error) and we should re-evaluate getNextMove frequently to
-      // try to get back on the graph.
-      bool isAdjacent = (std::abs(dx) <= 1 && std::abs(dy) <= 1);
 
-      bool allowReuse =
-          isAdjacent && ((ctx->reuseInit) ? --ctx->reuseCnt : true);
-
-      if (allowReuse) {
-        LOG_DEBUG_CONT("---REUSE (" << ctx->reuseCnt << ") PNT(dxdy: " << dx
-                                    << ", " << dy << ") "
-                                    << " frm: " << fromPnt.first << ","
-                                    << fromPnt.second
-                                    << " nxt: " << ctx->next.first << ","
-                                    << ctx->next.second);
-        ctx->didReuse = true;
-        auto nxtDir = computeAngle(dx, dy);
-        if (nxtDir != ctx->curDir) {
-          LOG_DEBUG("  CHANGE dir " << ctx->curDir << " => " << nxtDir);
-          ctx->curDir = nxtDir;
-        } else {
-          LOG_DEBUG("  SAME dir " << ctx->curDir);
-        }
-        return ctx->curDir;
-      } else {
-        LOG_DEBUG("---STOP: REUSE (adj:" << isAdjacent << ")");
-        ctx->reuseCnt = ctx->reuseInit;
-      }
-    }
-  }
 
   ctx->from = fromPnt;
   ctx->to = toPnt;
-  ctx->type = type;
 
   LOG_DEBUG("===GETNEXTMOVE: " << fromPnt.first << "," << fromPnt.second
                                << " TO " << toPnt.first << "," << toPnt.second

@@ -92,6 +92,14 @@ struct RouteCtx {
     float lockedAngle = -1.0f;
   };
   PerlinState perlin;
+  // WallFollow Specific
+  struct WallFollowState {
+    bool valid = false;
+    int lastX = 0;
+    int lastY = 0;
+    int currentDir = 0;
+  };
+  WallFollowState wallFollow;
 };
 
 struct Info {

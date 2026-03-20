@@ -291,56 +291,6 @@ float NavigationFlowGrid::getMoveDirection(Router::RouteCtx *ctx,
     }
     return computeAngle(targetX - from.x, targetY - from.y);
   };
-  // FIX: Enforce a reuse limit if it is 0/Infinite
-  if (ctx->reuseInit <= 0)
-    ctx->reuseInit = 20;
-
-  // Check if we can reuse previous direction (optimization)
-  if (ctx->type == type) {
-    auto dx = ctx->next.first - fromPnt.first;
-    auto dy = ctx->next.second - fromPnt.second;
-
-    // Check if we are still moving towards the next point (or it is adjacent)
-    // Note: If we reached the next point (dx=0, dy=0), we fall through to
-    // re-evaluate
-    bool stillValid = (dx || dy);
-
-    if (stillValid) {
-      // Only allow reuse if the next point is adjacent
-      bool isAdjacent = (std::abs(dx) <= 1 && std::abs(dy) <= 1);
-
-      bool allowReuse = isAdjacent && (--ctx->reuseCnt > 0);
-
-      if (allowReuse) {
-        ctx->didReuse = true;
-
-        // Recompute angle based on precise position relative to the target cell
-        // This allows smooth steering around corners/obs flow
-        float nxtDir = computePreciseAngle(ctx->next);
-
-        if (std::abs(nxtDir - ctx->curDir) > 0.1f) {
-          ctx->curDir = nxtDir;
-        }
-
-        LOG_DEBUG("FLOW: Reuse [" << ctx->next.first << "," << ctx->next.second
-                                  << "] Ang: " << ctx->curDir);
-        return ctx->curDir;
-      }
-    }
-  }
-
-  // Update context
-  ctx->from = fromPnt;
-  ctx->to = toPnt;
-
-  // Track if we are switching navigator types, which resets reuse
-  if (ctx->type != type) {
-    ctx->type = type;
-    ctx->reuseCnt = 0;
-  }
-
-  ctx->reuseCnt = ctx->reuseInit;
-
   // Get next move
   ctx->next = getNextMove(fromPnt, toPnt);
 
