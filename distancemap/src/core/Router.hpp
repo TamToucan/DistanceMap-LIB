@@ -19,7 +19,7 @@ struct RouteCtx {
   // Limit number of times can keep reusing previous direction
   // before re-routing
   // NOTE: For GRAPH routing 0 = infinite. FLOW doesn't allow
-  // 0 and resets it to 20
+  // 0 and r-esets it to 20
   int reuseInit = 0;
   int reuseCnt = reuseInit;
   bool didReuse = false;
@@ -105,6 +105,19 @@ struct RouteCtx {
     int currentDir = 0;
   };
   WallFollowState wallFollow;
+
+  // Stalk Navigator Specific
+  struct StalkState {
+    enum class Phase { APPROACH = 0, HIDING = 1, PEEKING = 2, RETREAT = 3, SEEKING_LOS = 4 };
+    Phase phase = Phase::APPROACH;
+    float phaseTimer = 0.0f;                    // seconds remaining in current phase
+    GridType::Point safeCell = {-1, -1};        // last known hide position
+    bool initialized = false;
+    GridType::Point seekingWaypoint = {-1, -1}; // immediate next cell toward nearest LoS cell
+    float seekRefreshTimer = 0.0f;              // countdown to next BFS waypoint refresh
+  };
+  StalkState stalk;
+
 };
 
 struct Info {

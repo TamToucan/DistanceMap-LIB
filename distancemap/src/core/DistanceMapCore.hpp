@@ -11,7 +11,6 @@
 namespace DistanceMap {
 
 enum NavigatorType {
-  FLOW,
   GRAPH,
 };
 

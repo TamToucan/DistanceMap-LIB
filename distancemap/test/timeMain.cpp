@@ -6,7 +6,6 @@
 
 #include "GridToGraph.hpp"
 #include "GridTypes.hpp"
-#include "NavigationFlowGrid.hpp"
 #include "NavigationGraph.hpp"
 #include "Router.hpp"
 
@@ -35,7 +34,6 @@ bool testNavigator(const std::string& name,
   bool reached_target = false;
   GridType::Point toPnt = {static_cast<int>(to.x / (info.mCellWidth * DistanceMap::CELL_MULT)),
                            static_cast<int>(to.y / (info.mCellHeight * DistanceMap::CELL_MULT))};
-  GridType::Point prevPnt = toPnt;
 
   std::cout << "\n=== Testing " << name << " ===" << std::endl;
   std::cout << "From: " << from.x << "," << from.y << " To: " << to.x << ","
@@ -50,23 +48,11 @@ bool testNavigator(const std::string& name,
     reached_target =
         (fromPnt.first == toPnt.first && fromPnt.second == toPnt.second);
 
-#if 0
-    if (prevPnt != fromPnt) {
-      if (pathGrid[fromPnt.second][fromPnt.first] == 'x') {
-        std::cerr << "ERROR: LOOPED BACK TO " << fromPnt.first << ","
-                  << fromPnt.second << std::endl;
-        break;
-      }
-    }
-#endif
-    prevPnt = fromPnt;
-
     if (pathGrid[fromPnt.second][fromPnt.first] & GridType::WALL) {
       std::cerr << "ERROR: WALL " << fromPnt.first << "," << fromPnt.second
                 << std::endl;
       break;
     }
-    pathGrid[fromPnt.second][fromPnt.first] = 'x';
 
     float ang = getDirection(ctx, from, to, 0);
     std::pair<float, float> mv = computeDirection(ang);
@@ -82,10 +68,10 @@ bool testNavigator(const std::string& name,
   delete ctx;
 
   if (reached_target) {
-    std::cout << "✓ PATH FOUND in " << (2000 - count) << " steps" << std::endl;
-    std::cout << "  Time: " << duration.count() << " μs" << std::endl;
+    std::cout << "PATH FOUND in " << (2000 - count) << " steps" << std::endl;
+    std::cout << "  Time: " << duration.count() << " us" << std::endl;
   } else {
-    std::cout << "✗ NO PATH (stopped after " << (2000 - count) << " steps)"
+    std::cout << "NO PATH (stopped after " << (2000 - count) << " steps)"
               << std::endl;
   }
 
@@ -93,7 +79,7 @@ bool testNavigator(const std::string& name,
 }
 
 int main(int argc, char** argv) {
-  std::cout << "=== Distance Map Navigator Test ===" << std::endl;
+  std::cout << "=== Distance Map Navigator Benchmark ===" << std::endl;
 
   auto grid = GridToGraph::readGridFromFile("GRID.txt");
   auto floorGrid = GridToGraph::gridToFloorGrid(grid);
@@ -104,18 +90,14 @@ int main(int argc, char** argv) {
   info.mCellWidth = 8;
   info.mCellHeight = 8;
 
-  // Initialize both navigators
   Routing::NavigationGraph navGraph(graph, info);
-  Routing::NavigationFlowGrid distMapNav(graph.infoGrid, info);
 
-  // Test cases
   GridType::Vec2 from1(300, 250);
   GridType::Vec2 to1(1950, 1086);
 
-  // Test original NavigationGraph
-  LOG_INFO("## ======= DISTANCEMAP TEST =======");
-  bool result1 = testNavigator(
-      "NavigationGraph (Original)",
+  LOG_INFO("## ======= NAVIGATOR BENCHMARK =======");
+  bool result = testNavigator(
+      "NavigationGraph",
       [&navGraph](DistanceMap::Router::RouteCtx* ctx,
                   DistanceMap::GridType::Vec2 from,
                   DistanceMap::GridType::Vec2 to, int type) {
@@ -123,51 +105,12 @@ int main(int argc, char** argv) {
       },
       graph, info, from1, to1);
 
-  // Test new NavigationFlowGrid
-  LOG_INFO("## ======= NAVIGATOR TEST =======");
-  bool result2 = testNavigator(
-      "NavigationFlowGrid (New)",
-      [&distMapNav](DistanceMap::Router::RouteCtx* ctx,
-                    DistanceMap::GridType::Vec2 from,
-                    DistanceMap::GridType::Vec2 to, int type) {
-        return distMapNav.getMoveDirection(ctx, from, to, type);
-      },
-      graph, info, from1, to1);
-
-  // Performance test: Multiple agents
-  std::cout << "\n=== Performance Test: 100 Agents ===" << std::endl;
-
-  std::vector<GridType::Vec2> agents;
-  for (int i = 0; i < 100; ++i) {
-    agents.push_back(GridType::Vec2(300 + i * 10, 250 + i * 5));
-  }
-  GridType::Vec2 target(1830, 986);
-
-  // Test NavigationFlowGrid with multiple agents
-  auto startTime = std::chrono::high_resolution_clock::now();
-  for (int frame = 0; frame < 10; ++frame) {
-    for (auto& agent : agents) {
-      DistanceMap::Router::RouteCtx ctx;
-      ctx.type = -1;
-      distMapNav.getMoveDirection(&ctx, agent, target, 0);
-    }
-  }
-  auto endTime = std::chrono::high_resolution_clock::now();
-  auto duration = std::chrono::duration_cast<std::chrono::microseconds>(
-      endTime - startTime);
-
-  std::cout << "NavigationFlowGrid: 100 agents × 10 frames = "
-            << duration.count() << " μs" << std::endl;
-  std::cout << "  Average per query: " << (duration.count() / 2000.0) << " μs"
-            << std::endl;
-
-  // Summary
   std::cout << "\n=== Summary ===" << std::endl;
-  if (result1 && result2) {
-    std::cout << "✓ Both implementations found valid paths" << std::endl;
+  if (result) {
+    std::cout << "OK: PATH FOUND" << std::endl;
     return 0;
   } else {
-    std::cout << "✗ One or both implementations failed" << std::endl;
+    std::cout << "ERROR: NO PATH" << std::endl;
     return 1;
   }
 }

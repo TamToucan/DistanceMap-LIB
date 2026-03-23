@@ -16,8 +16,6 @@ set(DMAP_SOURCES
     "GridTypes.hpp"
     "NavigationAPI.cpp"
     "NavigationAPI.hpp"
-    "NavigationFlowGrid.cpp"
-    "NavigationFlowGrid.hpp"
     "NavigationGraph.cpp"
     "NavigationGraph.hpp"
     "Router.cpp"

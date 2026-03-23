@@ -28,7 +28,6 @@ public:
                                      float angle, float distance);
 
   // Checks if a world position is valid (not inside a wall)
-  // Checks if a world position is valid (not inside a wall)
   virtual bool validateMove(const GridType::Vec2 &pos);
 
   virtual const std::vector<GridToGraph::AbstractLevel> *

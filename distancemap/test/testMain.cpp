@@ -54,7 +54,7 @@ int main(int argc, char **argv) {
   DistanceMap::DistanceMapCore core;
   core.initialize(grid, info);
 
-  auto pNavigator = core.makeNavigator(DistanceMap::NavigatorType::FLOW);
+  auto pNavigator = core.makeNavigator(DistanceMap::NavigatorType::GRAPH);
 
   DistanceMap::GridType::Vec2 from(300, 250);
   DistanceMap::GridType::Vec2 to(1950, 1086);

@@ -14,7 +14,7 @@ namespace DistanceMap {
 namespace Routing {
 
 //
-// NavigationFlowGrid uses the GridToGraph::Grid data to navigate.
+// NavigationGraph uses the GridToGraph::Grid data to navigate.
 // The heart of it is to find the source/target abstract level zones
 // and then
 // - if same then use EDGE/NODE/XPND to move towards the target

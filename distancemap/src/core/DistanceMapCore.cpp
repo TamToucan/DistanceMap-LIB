@@ -6,7 +6,6 @@
 #include "GridToGraph.hpp"
 #include "GridTypes.hpp"
 #include "NavigationAPI.hpp"
-#include "NavigationFlowGrid.hpp"
 #include "NavigationGraph.hpp"
 
 namespace DistanceMap {
@@ -42,8 +41,6 @@ void DistanceMapCore::initialize(const std::vector<std::vector<int>>& grid, cons
 
 std::unique_ptr<NavigationAPI> DistanceMapCore::makeNavigator(NavigatorType type) {
   switch (type) {
-    case FLOW:
-      return std::make_unique<Routing::NavigationFlowGrid>(m_graph.infoGrid, m_info);
     case GRAPH:
       return std::make_unique<Routing::NavigationGraph>(m_graph, m_info);
   }
