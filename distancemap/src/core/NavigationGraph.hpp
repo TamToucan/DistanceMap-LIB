@@ -34,7 +34,7 @@ public:
 
   // Main entry point for movement
   float getMoveDirection(Router::RouteCtx *ctx, GridType::Vec2 from,
-                         GridType::Vec2 to, int type) override;
+                         GridType::Vec2 to, int type, float dt) override;
 
   const std::vector<GridToGraph::AbstractLevel> *
   getAbstractLevels() const override;

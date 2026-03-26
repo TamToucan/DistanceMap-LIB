@@ -108,13 +108,14 @@ struct RouteCtx {
 
   // Stalk Navigator Specific
   struct StalkState {
-    enum class Phase { APPROACH = 0, HIDING = 1, PEEKING = 2, RETREAT = 3, SEEKING_LOS = 4 };
+    enum class Phase { APPROACH = 0, HIDING = 1, PEEKING = 2, RETREAT = 3, SEEKING_LOS = 4, SAFE_FLEE = 5 };
     Phase phase = Phase::APPROACH;
     float phaseTimer = 0.0f;                    // seconds remaining in current phase
     GridType::Point safeCell = {-1, -1};        // last known hide position
     bool initialized = false;
     GridType::Point seekingWaypoint = {-1, -1}; // immediate next cell toward nearest LoS cell
     float seekRefreshTimer = 0.0f;              // countdown to next BFS waypoint refresh
+    GridType::Point peekTargetCell = {-1, -1}; // destination LoS cell for PEEKING navigation
   };
   StalkState stalk;
 

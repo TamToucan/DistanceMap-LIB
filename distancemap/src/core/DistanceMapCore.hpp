@@ -29,7 +29,7 @@ public:
 
   float getMoveAngle(const std::unique_ptr<NavigationAPI> &pNavigator,
                      Router::RouteCtx *ctx, GridType::Vec2 from,
-                     GridType::Vec2 to, int type);
+                     GridType::Vec2 to, int type, float dt);
   GridType::Vec2 getMovePos(const std::unique_ptr<NavigationAPI> &pNavigator,
                             GridType::Vec2 from, float ang, float distance);
 

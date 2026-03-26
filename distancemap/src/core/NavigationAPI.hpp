@@ -21,7 +21,7 @@ public:
   virtual ~NavigationAPI() = default;
 
   virtual float getMoveDirection(Router::RouteCtx *ctx, GridType::Vec2 from,
-                                 GridType::Vec2 to, int type) = 0;
+                                 GridType::Vec2 to, int type, float dt) = 0;
 
   // Calculates new position with wall sliding
   virtual GridType::Vec2 resolveMove(const GridType::Vec2 &currentPos,

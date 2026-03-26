@@ -49,8 +49,8 @@ std::unique_ptr<NavigationAPI> DistanceMapCore::makeNavigator(NavigatorType type
 
 float DistanceMapCore::getMoveAngle(const std::unique_ptr<NavigationAPI>& pNavigator,
                                     Router::RouteCtx* ctx, GridType::Vec2 from,
-                                    GridType::Vec2 to, int type) {
-  return pNavigator->getMoveDirection(ctx, from, to, type);
+                                    GridType::Vec2 to, int type, float dt) {
+  return pNavigator->getMoveDirection(ctx, from, to, type, dt);
 }
 
 GridType::Vec2 DistanceMapCore::getMovePos(const std::unique_ptr<NavigationAPI>& pNavigator,
