@@ -91,10 +91,7 @@ int main(int argc, char **argv) {
       break;
     }
     pathGrid[fromPnt.second][fromPnt.first] = 'x';
-    std::cerr << "MOVEFROM: " << fromPnt.first << "," << fromPnt.second
-              << std::endl;
-
-    float ang = core.getMoveAngle(pNavigator, ctx, from, to, 0);
+    float ang = core.getMoveAngle(pNavigator, ctx, from, to, 0, 1.0f);
     std::pair<float, float> mv = computeDirection(ang);
     from.x += mv.first * 13;
     from.y += mv.second * 13;

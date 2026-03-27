@@ -20,7 +20,7 @@ std::pair<float, float> computeDirection(float angleDeg) {
 bool testNavigator(const std::string& name,
                    std::function<float(DistanceMap::Router::RouteCtx*,
                                        DistanceMap::GridType::Vec2,
-                                       DistanceMap::GridType::Vec2, int)>
+                                       DistanceMap::GridType::Vec2, int, float)>
                        getDirection,
                    const GridToGraph::Graph& graph,
                    const DistanceMap::Router::Info& info,
@@ -54,7 +54,7 @@ bool testNavigator(const std::string& name,
       break;
     }
 
-    float ang = getDirection(ctx, from, to, 0);
+    float ang = getDirection(ctx, from, to, 0, 1.0f);
     std::pair<float, float> mv = computeDirection(ang);
     from.x += mv.first * 13;
     from.y += mv.second * 13;
@@ -100,8 +100,8 @@ int main(int argc, char** argv) {
       "NavigationGraph",
       [&navGraph](DistanceMap::Router::RouteCtx* ctx,
                   DistanceMap::GridType::Vec2 from,
-                  DistanceMap::GridType::Vec2 to, int type) {
-        return navGraph.getMoveDirection(ctx, from, to, type);
+                  DistanceMap::GridType::Vec2 to, int type, float dt) {
+        return navGraph.getMoveDirection(ctx, from, to, type, dt);
       },
       graph, info, from1, to1);
 
