@@ -10,7 +10,7 @@ namespace Router {
 
 struct RouteCtx {
   int type = -1;
-  float curDir;
+  float curDir = -1.0f; // -1 = no valid direction yet (sentinel for hysteresis guards)
   GridType::Point from;
   GridType::Point to;
   GridType::Point next;
@@ -103,6 +103,13 @@ struct RouteCtx {
     int lastX = 0;
     int lastY = 0;
     int currentDir = 0;
+    int lostWallCount = 0;
+    int stuckFrameCount = 0;      // frames without cell progress; triggers reversal on deadlock
+    int reversalFrames = 0;       // grace period after reversal — bypasses SEEK re-attachment
+    int forbiddenDir = -1;        // heading that caused last stuck; SEEK won't re-attach to it
+    int cellsSinceReversal = 0;   // cell transitions since reversal; clears forbiddenDir when >= threshold
+    bool followLeft = true;       // true = left-hand rule, false = right-hand rule
+    bool followLeftSet = false;   // sentinel: false until randomized on first navigator call
   };
   WallFollowState wallFollow;
 

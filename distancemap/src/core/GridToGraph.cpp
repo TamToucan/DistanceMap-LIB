@@ -1981,6 +1981,7 @@ Graph makeGraph(const Grid &floorGrid) {
       }
     }
     graph.wallDistanceGrid = makeWallDistanceGrid(wallGrid);
+    graph.sightGrid        = makeSightGrid(wallGrid);
   }
 
   {

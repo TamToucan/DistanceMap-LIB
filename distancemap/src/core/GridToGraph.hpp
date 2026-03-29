@@ -10,6 +10,7 @@
 #include "FlowField.hpp"
 #include "GridTypes.hpp"
 #include "SparseNavGraph.hpp"
+#include "WallDistanceGrid.hpp"
 
 //
 // Take the 2D grid of EMPTY/PATH (i.e. 1 = floor, 0 = wall) and
@@ -119,6 +120,7 @@ struct Graph {
   std::vector<GridType::Point> deadEnds;
   std::vector<AbstractLevel> abstractLevels;
   std::vector<std::vector<int>> wallDistanceGrid;
+  SightGrid sightGrid;
 };
 
 ////////////////////////////////////////////////////////////////////////////////

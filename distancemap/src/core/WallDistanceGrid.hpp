@@ -17,10 +17,10 @@ std::vector<std::vector<int>> makeWallDistanceGrid(const GridType::Grid& grid);
 // A grid where each entry is a packed dist can see before Wall
 struct SightGrid {
 	GridType::Grid sight;
-	int getNorth(int x, int y) { return sight[y][x] & 0xff; }
-	int getEast(int x, int y) { return (sight[y][x] & 0xff00) >> 8; }
-	int getSouth(int x, int y) { return (sight[y][x] & 0xff0000) >> 16; }
-	int getWest(int x, int y) { return static_cast<unsigned int>(sight[y][x] & 0xff000000) >> 24; }
+	int getNorth(int x, int y) const { return sight[y][x] & 0xff; }
+	int getEast (int x, int y) const { return (sight[y][x] & 0xff00) >> 8; }
+	int getSouth(int x, int y) const { return (sight[y][x] & 0xff0000) >> 16; }
+	int getWest (int x, int y) const { return static_cast<unsigned int>(sight[y][x] & 0xff000000) >> 24; }
 };
 
 

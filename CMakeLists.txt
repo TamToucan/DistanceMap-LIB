@@ -8,6 +8,9 @@ if(NOT ALL_SUBS_BUILD_ON)
     set(CMAKE_CXX_STANDARD 20) 
     set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
     
+    # Static build on Windows needs this to avoid dllimport warnings
+    add_compile_definitions(LOTT_STATIC)
+    
     # Options
     if(DEFINED BUILD_GODOT)
         set(BUILD_GODOT_DMAP ${BUILD_GODOT})
