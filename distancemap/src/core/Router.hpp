@@ -59,6 +59,10 @@ struct RouteCtx {
     std::set<int> visitedEdges;
     int currentPathIdx = -1;
 
+    // Stuck / reversal detection
+    int stuckFrames    = 0;   // consecutive frames without fwdDot progress
+    int stuckThreshold = 120; // per-agent randomised frame count before reversal
+
     // Wander state
     bool allowWander = true;
     float wanderOffset = 0.0f;
@@ -125,6 +129,18 @@ struct RouteCtx {
     GridType::Point peekTargetCell = {-1, -1}; // destination LoS cell for PEEKING navigation
   };
   StalkState stalk;
+
+  // Graph Navigator Specific
+  struct GraphState {
+    int cachedTgtNodeIdx  = -1;           // target node the current routeNodes leads to
+    int tgtDeadEndEdgeIdx = -1;           // dead-end edge to enter once routeNodes consumed
+    int stuckFrames       = 0;            // consecutive frames without grid-cell progress
+    GridType::Point lastGridPos   = {-1, -1}; // last known grid position, for stuck detection
+    GridType::Point intendedNext  = {-1, -1}; // skeleton cell set by stepFromEdge; used by
+                                              // XPND fast-path to persist through off-skeleton
+                                              // traversal of diagonal skeleton steps
+  };
+  GraphState graph;
 
 };
 

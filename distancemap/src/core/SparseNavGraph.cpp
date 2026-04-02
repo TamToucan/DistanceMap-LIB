@@ -429,8 +429,11 @@ std::vector<int> SparseNavGraph::findRouteWithAllowedSets(
 
   if (sourceNodeIdx.has_value()) {
     return convertEdgesToNodePath(edgePath, std::nullopt, *sourceNodeIdx);
-  } else {
+  } else if (sourceEdgeIdx.has_value()) {
     return convertEdgesToNodePath(edgePath, *sourceEdgeIdx, std::nullopt);
+  } else {
+    LOG_ERROR("findRouteWithAllowedSets: no source provided (neither node nor edge)");
+    return {};
   }
 }
 
@@ -485,19 +488,25 @@ std::vector<int> SparseNavGraph::findRoute(
     LOG_DEBUG("FR: Same srcZone: " << sourceZoneId);
     const auto &zone = zones[sourceZoneId];
 
+    std::vector<int> r;
     if (sourceNodeIdx.has_value()) {
       LOG_DEBUG("FR:   Find NodeToPath");
-      return findZoneNodeToNodePath(ctx, zone.baseNodeIdxs, zone.baseEdgeIdxs,
-                                    *sourceNodeIdx, targetNodeIdx);
-    } else {
+      r = findZoneNodeToNodePath(ctx, zone.baseNodeIdxs, zone.baseEdgeIdxs,
+                                 *sourceNodeIdx, targetNodeIdx);
+    } else if (sourceEdgeIdx.has_value()) {
       LOG_DEBUG("FR:   Find EdgeToPath");
-      return findZoneEdgeToNodePath(ctx, zone.baseNodeIdxs, zone.baseEdgeIdxs,
-                                    *sourceEdgeIdx, targetNodeIdx);
+      r = findZoneEdgeToNodePath(ctx, zone.baseNodeIdxs, zone.baseEdgeIdxs,
+                                 *sourceEdgeIdx, targetNodeIdx);
+    } else {
+      LOG_INFO("FR: Same zone but no source node or edge — unresolvable source");
+      return {};
     }
+    if (!r.empty())
+      return r;
+    LOG_INFO("FR: Same-zone routing failed; falling back to full-graph A*");
   }
-
   // Case 2: Adjacent zones
-  if (zoneRelationship >= 0) {
+  else if (zoneRelationship >= 0) {
     LOG_DEBUG("FR: Adjacent srcZ: " << sourceZoneId
                                     << " tgtZ:: " << targetZoneId);
     const auto &sourceZone = zones[sourceZoneId];
@@ -514,42 +523,68 @@ std::vector<int> SparseNavGraph::findRoute(
 
     LOG_DEBUG("FR:   FindWithAllSets. nodes:"
               << allowedNodes.size() << " edges: " << allowedEdges.size());
-    return findRouteWithAllowedSets(ctx, allowedNodes, allowedEdges,
-                                    sourceNodeIdx, sourceEdgeIdx,
-                                    targetNodeIdx);
+    auto r = findRouteWithAllowedSets(ctx, allowedNodes, allowedEdges,
+                                      sourceNodeIdx, sourceEdgeIdx,
+                                      targetNodeIdx);
+    if (!r.empty())
+      return r;
+    LOG_INFO("FR: Adjacent-zone routing failed; falling back to full-graph A*");
   }
-
   // Case 3: Distant zones
-  LOG_DEBUG("FR: Distant: " << sourceZoneId << " tgtZ:: " << targetZoneId);
-  std::vector<int> zonePath =
-      findZonePathBFS(zones, sourceZoneId, targetZoneId);
-  if (zonePath.empty()) {
-    LOG_DEBUG("FR:   => EMPTY");
-    return {};
+  else {
+    LOG_DEBUG("FR: Distant: " << sourceZoneId << " tgtZ:: " << targetZoneId);
+    std::vector<int> zonePath =
+        findZonePathBFS(zones, sourceZoneId, targetZoneId);
+
+    if (!zonePath.empty()) {
+      // Combine all zones along the path
+      std::vector<int> allowedNodes, allowedEdges;
+      LOG_DEBUG("FR: Make sets for " << zonePath.size() << " zones");
+      for (int zoneId : zonePath) {
+        const auto &zone = zones[zoneId];
+        LOG_DEBUG("  Add zone: " << zoneId << " nodes: "
+                                 << zone.baseNodeIdxs.size() << " edges: "
+                                 << zone.baseEdgeIdxs.size());
+        LOG_DEBUG_CONT("      nodes: ");
+        LOG_DEBUG_FOR(auto z : zone.baseNodeIdxs, z << " ");
+        LOG_DEBUG_CONT("      edges: ");
+        LOG_DEBUG_FOR(auto e : zone.baseEdgeIdxs, e << " ");
+        LOG_DEBUG("");
+        allowedNodes.insert(allowedNodes.end(), zone.baseNodeIdxs.begin(),
+                            zone.baseNodeIdxs.end());
+        allowedEdges.insert(allowedEdges.end(), zone.baseEdgeIdxs.begin(),
+                            zone.baseEdgeIdxs.end());
+      }
+      LOG_DEBUG("FR:   Made sets. nodes:" << allowedNodes.size()
+                                          << " edges: " << allowedEdges.size());
+      auto r = findRouteWithAllowedSets(ctx, allowedNodes, allowedEdges,
+                                        sourceNodeIdx, sourceEdgeIdx,
+                                        targetNodeIdx);
+      if (!r.empty())
+        return r;
+      LOG_INFO(
+          "FR: Distant-zone routing failed; falling back to full-graph A*");
+    } else {
+      LOG_INFO("FR: Zone BFS found no path; falling back to full-graph A*");
+    }
   }
 
-  // Combine all zones along the path
-  std::vector<int> allowedNodes, allowedEdges;
-  LOG_DEBUG("FR: Make sets for " << zonePath.size() << " zones");
-  for (int zoneId : zonePath) {
-    const auto &zone = zones[zoneId];
-    LOG_DEBUG("  Add zone: " << zoneId << " nodes: " << zone.baseNodeIdxs.size()
-                             << " edges: " << zone.baseEdgeIdxs.size());
-    LOG_DEBUG_CONT("      nodes: ");
-    LOG_DEBUG_FOR(auto z : zone.baseNodeIdxs, z << " ");
-    LOG_DEBUG_CONT("      edges: ");
-    LOG_DEBUG_FOR(auto e : zone.baseEdgeIdxs, e << " ");
-    LOG_DEBUG("");
-    allowedNodes.insert(allowedNodes.end(), zone.baseNodeIdxs.begin(),
-                        zone.baseNodeIdxs.end());
-    allowedEdges.insert(allowedEdges.end(), zone.baseEdgeIdxs.begin(),
-                        zone.baseEdgeIdxs.end());
-  }
-
-  LOG_DEBUG("FR:   Made sets. nodes:" << allowedNodes.size()
-                                      << " edges: " << allowedEdges.size());
-  return findRouteWithAllowedSets(ctx, allowedNodes, allowedEdges,
-                                  sourceNodeIdx, sourceEdgeIdx, targetNodeIdx);
+  // Full-graph fallback: zone-restricted routing exhausted all options without
+  // finding a path. This happens when the source node sits at a zone boundary
+  // and its connections cross into zones not included in the restricted set.
+  // Empty allowed sets = no restriction: the entire navigation graph is searched.
+  LOG_INFO("FR: Full-graph A* src=" << (sourceNodeIdx ? *sourceNodeIdx : -1)
+                                    << " srcE="
+                                    << (sourceEdgeIdx ? *sourceEdgeIdx : -1)
+                                    << " tgt=" << targetNodeIdx);
+  auto edgePath =
+      bidirectionalAStarFlexible(sourceNodeIdx, sourceEdgeIdx, targetNodeIdx,
+                                 std::nullopt, {}, {});
+  if (sourceNodeIdx.has_value())
+    return convertEdgesToNodePath(edgePath, std::nullopt, *sourceNodeIdx);
+  if (sourceEdgeIdx.has_value())
+    return convertEdgesToNodePath(edgePath, *sourceEdgeIdx, std::nullopt);
+  return {};
 }
 
 ///////////////////////////////////////////////////////////////////////////////////////////
@@ -631,11 +666,16 @@ SparseNavGraph buildSparseGraph(const std::vector<GridType::Point> &baseNodes,
     g.edgeCosts.push_back(e.toDeadEnd ? 0xffff : e.path.size());
     g.edgeFromTos.emplace_back(e.from, e.toDeadEnd ? -1 : e.to);
 
-    g.forwardConnections[e.from].emplace_back(e.to, i);
-    g.reverseConnections[e.from].emplace_back(e.to, i);
     if (e.toDeadEnd) {
+      // Dead-end edges lead to cul-de-sacs and must NOT enter the A* routing
+      // graph. e.to is a dead-end index — a different namespace from base-node
+      // indices — so inserting it into forwardConnections/reverseConnections
+      // would corrupt the graph with spurious cross-namespace edges. Dead-end
+      // access is handled separately via tgtDeadEndEdgeIdx in Phase D/F.
       g.deadendConnection[e.to] = {e.from, i};
     } else {
+      g.forwardConnections[e.from].emplace_back(e.to, i);
+      g.reverseConnections[e.from].emplace_back(e.to, i);
       g.reverseConnections[e.to].emplace_back(e.from, i);
       g.forwardConnections[e.to].emplace_back(e.from, i);
       g.nodeToEdgeIdxs[e.from].push_back(i);

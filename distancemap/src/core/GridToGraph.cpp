@@ -585,6 +585,7 @@ void markGridNodes(Grid &grid, const std::vector<Point> &nodes,
 void markGridPaths(Grid &grid, const std::vector<Edge> &edges) {
   int edgeIdx = GridToGraph::EDGE;
   for (const auto &e : edges) {
+    edgeIdx &= ~GridType::EDGE_HALF; // clear half-flag carried over from previous edge
     int halfway = e.path.size() / 2;
     for (const auto &p : e.path) {
       if (isPath(grid[p.second][p.first])) {
@@ -642,7 +643,7 @@ void restoreWalls(Grid &infoGrid, const Grid &floorGrid) {
 
 /////////////////////////////////////////////////////////////////////////////////////////
 
-Path simplifyPath(const Path &inPath, const Grid &floorGrid) {
+Path simplifyPath(const Path& inPath, const Grid& floorGrid) {
   Path simplePath;
   if (inPath.size() < 3)
     return inPath;
@@ -663,19 +664,27 @@ Path simplifyPath(const Path &inPath, const Grid &floorGrid) {
     int dy = next.second - prev.second;
     if (std::abs(dx) <= 1 && std::abs(dy) <= 1) {
       // Check if the inner corner clips a solid tile
+      // This is to help movement around corners, trying to
+      // move diagonal can hit the corner of a wall
       bool isSafe = true;
 #if 1
       if (std::abs(dx) == 1 && std::abs(dy) == 1) {
-        int corner1 = floorGrid[prev.second][next.first];
-        int corner2 = floorGrid[next.second][prev.first];
-        LOG_DEBUG("      DIAG c1: "
-                  << next.first << "," << prev.second << " => " << std::hex
-                  << corner1 << " c2: " << prev.first << "," << next.second
-                  << " => " << std::hex << corner2 << std::dec);
-        // If corner1 or 2 is WALL (not-floor) then cutting cornder
-        // => don't use diagonal move
-        if (!corner1 || !corner2) {
-          LOG_DEBUG("      => cutting");
+        // The corner is the one that is not prev or next or curr
+        // of the 2x2 square
+        int cornerX = (prev.first == curr.first) ? next.first
+                     : (prev.first == next.first ? curr.first
+                     : prev.first);
+        int cornerY = (prev.second == curr.second) ? next.second
+                     : (prev.second == next.second ? curr.second
+                     : prev.second);
+
+        // If 0 (EMPTY) => not floor => corner is wall
+        bool isCornerWall = !floorGrid[cornerY][cornerX];
+        LOG_DEBUG("      DIAG c1: " << cornerX << "," << cornerY << " => " << isCornerWall);
+        // If corner is WALL (not-floor) then 3 cells are L shape going round wall
+        // So do NOT go diagonal to avoid cutting corner
+        if (isCornerWall) {
+          LOG_DEBUG("      => do not cut wall");
           isSafe = false;
         }
       }
@@ -742,7 +751,7 @@ public:
 
     auto itr = edges.find(newEdge);
     if (itr != edges.end()) {
-      LOG_DEBUG_CONT("#AddEdge DUP EDGE: "
+      LOG_DEBUG_CONT(" => DUP AddEdge EDGE: "
                      << newEdge.from << "->" << newEdge.to
                      << (newEdge.toDeadEnd ? " (DEAD)" : "") << " P: ");
       LOG_DEBUG_FOR(const auto &p : newEdge.path,
@@ -750,7 +759,7 @@ public:
       return false;
     }
 
-    LOG_DEBUG_CONT("#AddSEdge STORE: " << newEdge.from << "->" << newEdge.to
+    LOG_DEBUG_CONT(" STORE AddSEdge: " << newEdge.from << "->" << newEdge.to
                                        << (newEdge.toDeadEnd ? " (DEAD)" : "")
                                        << " P: ");
     LOG_DEBUG_FOR(const auto &p : newEdge.path,
@@ -785,7 +794,7 @@ private:
     // Should not both be dead and if Node0 == Node1 then one must be a deadEnd
     bool startEndOk = (!bothDead) && ((node0 != node1) || isDeadEnd);
     if (!startEndOk) {
-      LOG_DEBUG("#GetEdge START = END: " << (isDead0 ? "DEAD " : "") << node0
+      LOG_DEBUG(" GetEdge START = END: " << (isDead0 ? "DEAD " : "") << node0
                                          << " == " << (isDead1 ? "DEAD " : "")
                                          << node1);
       return false;
@@ -799,14 +808,14 @@ private:
                                                  : std::make_pair(node1, node0);
 
       if (adjacentNodePairs.count(edge)) {
-        LOG_DEBUG("#GetEdge DUP: " << (isDeadEnd ? "DEAD " : "") << edge.first
+        LOG_DEBUG(" GetEdge DUP: " << (isDeadEnd ? "DEAD " : "") << edge.first
                                    << " to " << edge.second);
         return false;
       }
       adjacentNodePairs.insert(edge);
     }
 
-    LOG_DEBUG_CONT("#GetEdge " << ((startRC & DEND) ? "DEND " : "NODE ")
+    LOG_DEBUG_CONT(" GetEdge " << ((startRC & DEND) ? "DEND " : "NODE ")
                                << (startRC & 0xffff) << " -> "
                                << ((endRC & DEND) ? "DEND " : "NODE ")
                                << (endRC & 0xffff) << "   P: ");
@@ -823,9 +832,9 @@ private:
     Path simplePath = simplifyPath(path, floorGrid);
 
     if (simplePath.size() != path.size()) {
-      LOG_DEBUG_CONT("#GetEdge INPUT  ");
+      LOG_DEBUG_CONT(" GetEdge INPUT  ");
       LOG_DEBUG_FOR(const auto &p : path, "  " << p.first << "," << p.second);
-      LOG_DEBUG_CONT("#GetEdge SIMPLE ");
+      LOG_DEBUG_CONT(" GetEdge SIMPLE ");
       LOG_DEBUG_FOR(const auto &p : simplePath,
                     "  " << p.first << "," << p.second);
     }
@@ -885,6 +894,7 @@ Path followPath(int startX, int startY, EdgeAdder &edgeAdder,
     // Skip empty or visited path cells
     if (grid[ny][nx] == 0)
       continue; // EMPTY
+    LOG_DEBUG("  dir:" << dx << "," << dy << "  => " << nx << "," << ny);
     if (isPath(grid[ny][nx]) && tempVisited[ny][nx]) {
       LOG_DEBUG("  " << nx << "," << ny << " => Visited (or Node");
       continue; // Already visited path cell
@@ -911,10 +921,14 @@ Path followPath(int startX, int startY, EdgeAdder &edgeAdder,
         if (fwd.first == startX && fwd.second == startY) {
           // This forward direction loops back to the start node => break/fail
           // We'll try the next direction
+          LOG_DEBUG_CONT("       Unvist: ");
           for (const auto p : forwardPath) {
-            if (isPath(grid[p.second][p.first]))
+            if (isPath(grid[p.second][p.first])) {
               tempVisited[p.second][p.first] = false;
+              LOG_DEBUG_CONT(p.first << "," << p.second << " ");
+            }
           }
+          LOG_DEBUG("");
           forwardPath.clear();
           LOG_DEBUG("    LOOP => clear path");
         }
@@ -942,9 +956,8 @@ Path followPath(int startX, int startY, EdgeAdder &edgeAdder,
       }
       if (!foundNext) {
         // Could not proceed to any next cell => path fails
-        LOG_DEBUG("  NOT FOUND => clear: ");
-        LOG_DEBUG_FOR(const auto p : forwardPath,
-                      p.first << "," << p.second << "  ");
+        LOG_DEBUG_CONT("  FWD NOT FOUND => clear: ");
+        LOG_DEBUG_FOR(const auto p : forwardPath, p.first << "," << p.second << "  ");
         forwardPath.clear();
         break;
       }
@@ -983,22 +996,25 @@ Path followPath(int startX, int startY, EdgeAdder &edgeAdder,
         // forward
         int bx = bck.first - dx2;
         int by = bck.second - dy2;
+        LOG_DEBUG("    bck dir: " << dx2 << "," << dy2 << " => " << bx << "," << by
+                  << " grid: " << std::hex << (int)grid[by][bx] << std::dec);
         if (grid[by][bx] == 0)
           continue; // empty
-        if (isPath(grid[by][bx]) && tempVisited[by][bx])
+        if (isPath(grid[by][bx]) && tempVisited[by][bx]) {
+          LOG_DEBUG("      " << bx << "," << by << " => Visited (or Node)");
           continue;
+        }
 
         bck = {bx, by};
         foundNext = true;
-        LOG_DEBUG("    " << bx << "," << by << " => Found next");
+        LOG_DEBUG("      " << bx << "," << by << " => bck found next");
         break;
       }
       if (!foundNext) {
-        LOG_DEBUG_FOR(const auto p : backwardPath,
-                      p.first << "," << p.second << "  ");
+        LOG_DEBUG_CONT("    BCK NOT FOUND => clear: ");
+        LOG_DEBUG_FOR(const auto p : backwardPath, p.first << "," << p.second << "  ");
         // Could not proceed => path fails
         backwardPath.clear();
-        LOG_DEBUG("    BCK NOT FOUND => clear");
         break;
       }
     }
@@ -1036,11 +1052,8 @@ Path followPath(int startX, int startY, EdgeAdder &edgeAdder,
 //
 // Grid has NODE, DEND, PATH, EMPTY (must be 0)
 //
-std::vector<Edge> findEdges(const Grid &grid, const Grid &floorGrid,
-                            const std::vector<Point> &nodes,
-                            const std::vector<Point> &deadEnds) {
-  LOG_INFO("##FINDEDGES nodes:" << nodes.size()
-                                << " deadEnds:" << deadEnds.size());
+std::vector<Edge> findEdges(const Grid &grid, const Grid &floorGrid) {
+  LOG_INFO("##FINDEDGES");
   const int rows = (int)grid.size();
   const int cols = (int)grid[0].size();
   std::vector<std::vector<bool>> visited(rows, std::vector<bool>(cols, false));
@@ -1068,8 +1081,27 @@ std::vector<Edge> findEdges(const Grid &grid, const Grid &floorGrid,
   return result;
 }
 
-std::vector<Edge> findNodeEdges(const std::vector<Point> &nodes,
-                                const Grid &grid, const Grid &floorGrid) {
+Grid rewriteInfoGrid(const Grid &grid, const std::vector<Edge> &edges) {
+  Grid result = Grid(grid.size(), std::vector<int>(grid[0].size(), EMPTY));
+  for (const auto &e : edges) {
+    for (const auto &p : e.path) {
+      result[p.second][p.first] = PATH;
+    }
+  }
+  // Preserve NODE and DEND cells from the grid — they already encode their
+  // index (set by markGridNodes) and must win over any PATH written above
+  for (int r = 0; r < static_cast<int>(grid.size()); ++r) {
+    for (int c = 0; c < static_cast<int>(grid[0].size()); ++c) {
+      if ((grid[r][c] & NODE) || (grid[r][c] & DEND)) {
+        result[r][c] = grid[r][c];
+      }
+    }
+  }
+  return result;
+}
+
+  std::vector<Edge> findNodeEdges(const std::vector<Point> &nodes,
+                                  const Grid &grid, const Grid &floorGrid) {
   const int rows = (int)grid.size();
   const int cols = (int)grid[0].size();
   std::vector<std::vector<bool>> visited(rows, std::vector<bool>(cols, false));
@@ -1110,6 +1142,7 @@ std::vector<Edge> findNodeEdges(const std::vector<Point> &nodes,
 BaseGraph fixBaseEdges(std::vector<Edge> &baseEdges, const Grid &infoGrid,
                        const Grid &floorGrid,
                        const std::vector<Point> &baseNodes) {
+  LOG_INFO("## FIX BASE EDGES");
   // First Make a graph edgeNode1 -> list of (edgeNode2, edgeIndex, 1->2 flag,
   // cost)
   BaseGraph baseGraph = GridType::buildBaseGraph(baseEdges, baseNodes.size());
@@ -1120,6 +1153,7 @@ BaseGraph fixBaseEdges(std::vector<Edge> &baseEdges, const Grid &infoGrid,
   if (unconnected.empty()) {
     return baseGraph;
   }
+  LOG_INFO("  Unconnected nodes: " << unconnected.size());
 
   // Turn list of unconnected node indexes to list of Nodes
   std::vector<Point> unconnectedNodes;
@@ -1388,10 +1422,7 @@ std::vector<AbstractNode> createAbstractNodes(const std::vector<Point> &nodes,
   clusters.reserve(nodes.size());
   for (size_t i = 0; i < nodes.size(); ++i) {
     int clusterId = clusterLabels[i];
-    // Skip noise points (outliers)
-    if (clusterId == -1) {
-      continue;
-    }
+    if (clusterId < 0) continue; // UNVISITED or NOISE: skip
     auto &cluster = clusters[clusterId]; // inserts if missing
     cluster.baseNodes.push_back(static_cast<int>(i));
     cluster.center.first += nodes[i].first;
@@ -1927,9 +1958,8 @@ Graph makeGraph(const Grid &floorGrid) {
   // Find all the BaseEdges connecting all the NODE and DENDs
   // - Need floorGrid to check for cutting corner on diagonal moves
   //
-  graph.baseEdges =
-      findEdges(graph.infoGrid, floorGrid, graph.baseNodes, graph.deadEnds);
-
+  graph.baseEdges = findEdges(graph.infoGrid, floorGrid);
+  
   //
   // Unfortunately there are a few scenarios that dont connect. Basically
   // some places aren't marked as nodes (some areas where "double/triple thick"
@@ -1945,6 +1975,15 @@ Graph makeGraph(const Grid &floorGrid) {
   //
   graph.baseGraph =
       fixBaseEdges(graph.baseEdges, graph.infoGrid, floorGrid, graph.baseNodes);
+
+  //
+  // Where it simplified the path it will have left the PATH value for infoGrid.
+  // Simple fix is to re-write the infoGrid with NODE, DEND, PATH, EMPTY using
+  // the created data.
+  //
+  graph.infoGrid = rewriteInfoGrid(graph.infoGrid, graph.baseEdges);
+  makeTGA2("GRID_REWRITE.tga", graph.infoGrid, 0xffff0001);
+
 
   //
   // Mark the edges in the infoGrid and their index

@@ -11,6 +11,28 @@
 namespace DistanceMap {
 namespace Routing {
 
+// Frames at the same grid cell before the route is discarded and retried.
+static constexpr int STUCK_THRESHOLD = 60;
+
+// Clears the route plan AND the A* route-cache fields inside RouteCtx so that
+// the next ensureRoute call actually re-runs A* instead of hitting SAME ROUTE.
+static void resetRouteCache(Router::RouteCtx *ctx) {
+  ctx->routeNodes.clear();
+  ctx->graph.tgtDeadEndEdgeIdx = -1;
+  ctx->routeSrcNodeIdx  = -1;
+  ctx->routeTgtNodeIdx  = -1;
+  ctx->routeSrcNodeIdx2 = -1;
+  ctx->routeTgtEdgeIdx  = -1;
+  ctx->routeSrcEdgeIdx  = -1;
+  ctx->routeTgtNodeIdx2 = -1;
+  ctx->routeSrcEdgeIdx2 = -1;
+  ctx->routeTgtEdgeIdx2 = -1;
+}
+
+// ---------------------------------------------------------------------------
+// Construction
+// ---------------------------------------------------------------------------
+
 NavigationGraph::NavigationGraph(const GridToGraph::Graph &graphData,
                                  const Router::Info &info)
     : NavigationAPI(graphData.infoGrid, info), m_baseGraph(graphData.baseGraph),
@@ -19,12 +41,23 @@ NavigationGraph::NavigationGraph(const GridToGraph::Graph &graphData,
       m_baseNodes(graphData.baseNodes), m_deadEnds(graphData.deadEnds),
       m_abstractLevels(graphData.abstractLevels) {}
 
-float NavigationGraph::computeAngle(double dx, double dy) {
-  if (dx == 0 && dy == 0) {
-    return 0.0; // No movement
-  }
+// ---------------------------------------------------------------------------
+// Utilities
+// ---------------------------------------------------------------------------
+
+float NavigationGraph::computeAngle(double dx, double dy) const {
+  if (dx == 0 && dy == 0)
+    return 0.0f;
   return static_cast<float>(
       std::fmod(std::atan2(dy, dx) * (180.0 / MY_PI) + 360.0, 360.0));
+}
+
+NavigationGraph::CellKind NavigationGraph::classifyCell(int cell) {
+  if (cell & GridType::NODE) return CellKind::NODE;
+  if (cell & GridType::EDGE) return CellKind::EDGE;
+  if (cell & GridType::DEND) return CellKind::DEND;
+  if (cell & GridType::XPND) return CellKind::XPND;
+  return CellKind::OTHER;
 }
 
 const std::vector<GridToGraph::AbstractLevel> *
@@ -32,630 +65,672 @@ NavigationGraph::getAbstractLevels() const {
   return &m_abstractLevels;
 }
 
+// ---------------------------------------------------------------------------
+// getClosestNode
+//
+// Maps an arbitrary floor cell to the nearest graph node.
+// Fixes the original bug where edgeIdx was read once from the initial position
+// and then incorrectly reused after XPND traversal moved the working point.
+// ---------------------------------------------------------------------------
+
 NavigationGraph::ClosestNodeInfo
-NavigationGraph::getClosestNode(const GridType::Point &pos) {
-  const int edgeIdx =
-      m_routingGraph.edgeGrid.get(pos.first, pos.second) & GridType::EDGE_MASK;
+NavigationGraph::getClosestNode(const GridType::Point &pos) const {
   int cell = m_infoGrid[pos.second][pos.first];
-  LOG_DEBUG(
-      "getClosest: " << pos.first << "," << pos.second
-                     << " => edgeIdx: " << edgeIdx << " ("
-                     << (m_routingGraph.edgeFromTos[edgeIdx].first) << "->"
-                     << (m_routingGraph.edgeFromTos[edgeIdx].second) << ")"
-                     << " cell: " << std::hex << cell << std::dec);
+
+  // Already on a node
   if (cell & GridType::NODE) {
-    LOG_DEBUG("getClosest: at NODE " << (cell & 0xffff));
     return {cell & 0xffff, -1, false, pos};
   }
 
+  // Already on an edge
   if (cell & GridType::EDGE) {
-    int edgeIdx = cell & GridType::EDGE_MASK;
-    const auto &fromto = m_routingGraph.edgeFromTos[edgeIdx];
-    LOG_DEBUG("getClosest: at EDGE " << edgeIdx << " fromto: " << fromto.first
-                                     << "->" << fromto.second);
-    if (!(cell & GridType::EDGE_HALF) || fromto.second < 0) {
-      return {fromto.first, edgeIdx, true, pos};
-    } else {
-      return {fromto.second, edgeIdx, true, pos};
-    }
+    int eIdx = cell & GridType::EDGE_MASK;
+    const auto &ft = m_routingGraph.edgeFromTos[eIdx];
+    bool secondHalf = (cell & GridType::EDGE_HALF) && (ft.second >= 0);
+    return {secondHalf ? ft.second : ft.first, eIdx, true, pos};
   }
+
+  // Follow XPND pointers until we land on an edge or node
   GridType::Point edgePnt = pos;
   while (cell & GridType::XPND) {
     int dst = GridType::get_XPND_DIST(cell);
     int dir = GridType::get_XPND_DIR(cell);
-    edgePnt.first += GridType::directions8[dir].first * dst;
+    edgePnt.first  += GridType::directions8[dir].first  * dst;
     edgePnt.second += GridType::directions8[dir].second * dst;
     cell = m_infoGrid[edgePnt.second][edgePnt.first];
-    LOG_DEBUG("GNE: XPND => move in dir:"
-              << dir << " by dst:" << dst << " => " << edgePnt.first << ","
-              << edgePnt.second << " cell: " << std::hex << cell << std::dec);
+    LOG_DEBUG("GCN: XPND => " << edgePnt.first << "," << edgePnt.second
+                               << " cell: " << std::hex << cell << std::dec);
   }
+
   if (cell & GridType::EDGE) {
-    LOG_DEBUG("getClosest: At EDGE => " << (cell & GridType::EDGE_MASK));
-    int edgeIdx = cell & GridType::EDGE_MASK;
-    const auto fromto = m_routingGraph.edgeFromTos[edgeIdx];
-    LOG_DEBUG("  => node: " << ((cell & GridType::EDGE_HALF) ? fromto.second
-                                                             : fromto.first));
-    if (!(cell & GridType::EDGE_HALF) || fromto.second < 0) {
-      return {fromto.first, edgeIdx, true, edgePnt};
-    } else {
-      return {fromto.second, edgeIdx, true, edgePnt};
+    int eIdx = cell & GridType::EDGE_MASK;
+    const auto &ft = m_routingGraph.edgeFromTos[eIdx];
+    bool secondHalf = (cell & GridType::EDGE_HALF) && (ft.second >= 0);
+    return {secondHalf ? ft.second : ft.first, eIdx, true, edgePnt};
+  }
+
+  if (cell & GridType::NODE) {
+    return {cell & 0xffff, -1, false, edgePnt};
+  }
+
+  if (cell & GridType::DEND) {
+    int dendIdx = cell & 0xffff;
+    // Re-read edgeIdx from the destination point (not the original pos)
+    int eIdx = m_routingGraph.getEdgeFromDead(dendIdx);
+    int fromNode = (eIdx >= 0) ? m_routingGraph.edgeFromTos[eIdx].first : -1;
+    LOG_DEBUG("GCN: DEND " << dendIdx << " fromNode: " << fromNode);
+    return {fromNode, dendIdx, false, edgePnt};
+  }
+
+  LOG_ERROR("GCN: Could not resolve pos " << pos.first << "," << pos.second
+                                          << " cell: " << std::hex << cell
+                                          << std::dec);
+  return {-1, -1, false, pos};
+}
+
+// ---------------------------------------------------------------------------
+// findZoneRelationship
+// ---------------------------------------------------------------------------
+
+NavigationGraph::ZoneInfo
+NavigationGraph::findZoneRelationship(const GridType::Point &source,
+                                      const GridType::Point &target) const {
+  ZoneInfo zi;
+
+  // Track the last level where BOTH zones were valid.
+  // These are what get used for the distant-routing fallback so they must
+  // never come from a level where either zone was -1.
+  int lastValidLvl = -1;
+  int lastValidSrc = -1;
+  int lastValidTgt = -1;
+
+  for (int lvl = 0; lvl < static_cast<int>(m_abstractLevels.size()); ++lvl) {
+    const auto &ablv  = m_abstractLevels[lvl];
+    int srcZone = ablv.zoneGrid[source.second][source.first].closestAbstractNodeIdx;
+    const int tgtZone = ablv.zoneGrid[target.second][target.first].closestAbstractNodeIdx;
+    const int nZones  = static_cast<int>(ablv.zones.size());
+
+    // If the source cell has no zone assignment (e.g. a floor cell not covered by
+    // XPND expansion, reached via collision/truncation), search adjacent cells for
+    // a valid zone so the agent can still route rather than looping forever.
+    if (srcZone < 0) {
+      const int rows = static_cast<int>(ablv.zoneGrid.size());
+      const int cols = (rows > 0) ? static_cast<int>(ablv.zoneGrid[0].size()) : 0;
+      for (const auto &d : GridType::directions8) {
+        const int nx = source.first  + d.first;
+        const int ny = source.second + d.second;
+        if (nx >= 0 && ny >= 0 && ny < rows && nx < cols) {
+          const int z = ablv.zoneGrid[ny][nx].closestAbstractNodeIdx;
+          if (z >= 0 && z < nZones) {
+            LOG_DEBUG("NG: findZones lvl " << lvl << " src zone -1 at "
+                      << source.first << "," << source.second
+                      << "; using neighbor zone " << z
+                      << " from " << nx << "," << ny);
+            srcZone = z;
+            break;
+          }
+        }
+      }
+    }
+
+    if (srcZone < 0 || srcZone >= nZones || tgtZone < 0 || tgtZone >= nZones) {
+      LOG_DEBUG("NG: findZones lvl " << lvl << " invalid src=" << srcZone
+                                     << " tgt=" << tgtZone << "; skipping");
+      continue;
+    }
+
+    // This level has both zones valid — remember it for the distant fallback
+    lastValidLvl = lvl;
+    lastValidSrc = srcZone;
+    lastValidTgt = tgtZone;
+
+    if (srcZone == tgtZone) {
+      zi = {srcZone, tgtZone, lvl, -1};
+      return zi;
+    }
+
+    for (int adj : ablv.zones[srcZone].adjacentZones) {
+      if (adj == tgtZone) {
+        zi = {srcZone, tgtZone, lvl, lvl};
+        return zi;
+      }
     }
   }
-  if (cell & GridType::NODE) {
-    int node = cell & 0xffff;
-    LOG_DEBUG("getClosest: Moved to NODE " << node);
-    return {node, -1, false, edgePnt};
-  }
-  if (cell & GridType::DEND) {
-    int toDend = cell & 0xffff;
-    int from = m_routingGraph.edgeFromTos[edgeIdx].first;
-    LOG_DEBUG("getClosest: Moved to DEND " << toDend << " fromNode: " << from);
-    return {from, toDend, false, edgePnt};
+
+  if (lastValidLvl >= 0) {
+    // Distant: zones are in different non-adjacent zones; route via highest valid level
+    zi = {lastValidSrc, lastValidTgt, lastValidLvl, -2};
   } else {
-    LOG_ERROR("Cell not moved to edge " << " (" << edgePnt.first << ","
-                                        << edgePnt.second << ") => " << std::hex
-                                        << cell << std::dec);
-    return {-1, -1, false, edgePnt};
+    // No level had both src and tgt in a valid zone — unroutable
+    LOG_INFO("NG: findZones: no valid zone for src="
+             << source.first << "," << source.second
+             << " tgt=" << target.first << "," << target.second);
+    zi.ablvIdx = -1; // sentinel consumed by ensureRoute
   }
+  return zi;
 }
 
-GridType::Point NavigationGraph::nextPoint(const GridType::Point &from,
-                                           const GridType::Point &dir) {
-  return {from.first + dir.first, from.second + dir.second};
+// ---------------------------------------------------------------------------
+// ensureRoute
+//
+// Builds ctx->routeNodes if empty. Returns true when the route is ready.
+// ---------------------------------------------------------------------------
+
+bool NavigationGraph::ensureRoute(Router::RouteCtx *ctx,
+                                  const ZoneInfo &zi,
+                                  std::optional<int> srcNodeIdx,
+                                  std::optional<int> srcEdgeIdx,
+                                  int tgtNodeIdx) const {
+  if (!ctx->routeNodes.empty())
+    return true;
+
+  if (zi.ablvIdx < 0) {
+    LOG_INFO("NG: ensureRoute: unroutable (no valid zone); skipping");
+    return false;
+  }
+
+  const auto &ablv = m_abstractLevels[zi.ablvIdx];
+  ctx->routeNodes = m_routingGraph.findRoute(
+      ctx, ablv.zones, ablv.abstractEdges,
+      srcNodeIdx, srcEdgeIdx, tgtNodeIdx,
+      zi.sourceZone, zi.targetZone, zi.relationship);
+
+  // Empty-route fallback: A* returns an empty edge-path in two legitimate cases:
+  //   1. Source IS the target node (0 edges to traverse).
+  //   2. Source is ON an edge whose endpoint IS the target node — A* seeds both
+  //      directions from the same endpoint so reconstruction has no steps, but
+  //      the agent can simply follow the source edge to reach the target.
+  // Do NOT apply on any other A* failure — a spurious [tgtNodeIdx] route when
+  // there is no real connection causes Phase F to spin with "NODE forward edge
+  // not found" and reset indefinitely.
+  if (ctx->routeNodes.empty() && zi.ablvIdx >= 0) {
+    const bool atTarget = srcNodeIdx.has_value() && (*srcNodeIdx == tgtNodeIdx);
+    const bool onDirectEdge = srcEdgeIdx.has_value() && (
+        m_routingGraph.edgeFromTos[*srcEdgeIdx].first  == tgtNodeIdx ||
+        m_routingGraph.edgeFromTos[*srcEdgeIdx].second == tgtNodeIdx);
+    if (atTarget || onDirectEdge) {
+      ctx->routeNodes.push_back(tgtNodeIdx);
+      LOG_INFO("NG: Empty-path fallback route -> [" << tgtNodeIdx << "]");
+    }
+  }
+
+  if (!ctx->routeNodes.empty()) {
+    LOG_INFO("NG: Route computed: " << ctx->routeNodes.size()
+                                    << " nodes -> tgt " << tgtNodeIdx);
+  }
+  return !ctx->routeNodes.empty();
 }
 
-GridType::Point NavigationGraph::nextStep(const GridType::Point &from,
-                                          const GridType::Point &to) {
-  GridType::Point dir = {to.first - from.first, to.second - from.second};
-  GridType::Point p = nextPoint(from, dir);
-  LOG_DEBUG("  NXTSTP f: " << from.first << "," << from.second
-                           << " t: " << to.first << "," << to.second
-                           << " => d:" << dir.first << "," << dir.second
-                           << " => p: " << p.first << "," << p.second);
-  return p;
+// ---------------------------------------------------------------------------
+// stepFromNode
+//
+// Agent is sitting on a graph junction node. Advance one step along the edge
+// toward routeNodes[0].
+// ---------------------------------------------------------------------------
+
+GridType::Point NavigationGraph::stepFromNode(Router::RouteCtx *ctx,
+                                              int srcNode,
+                                              GridType::Point source) const {
+  // Pop the head of the route if it's the node we're already on
+  if (!ctx->routeNodes.empty() && ctx->routeNodes[0] == srcNode) {
+    ctx->routeNodes.erase(ctx->routeNodes.begin());
+    LOG_DEBUG("NG: NODE " << srcNode << " popped from routeNodes");
+  }
+
+  if (ctx->routeNodes.empty()) {
+    // If the target lies in a dead-end whose from-node is us, enter it
+    const int deIdx = ctx->graph.tgtDeadEndEdgeIdx;
+    if (deIdx >= 0) {
+      const auto &deEdge = m_baseEdges[deIdx];
+      if (deEdge.from == srcNode && deEdge.path.size() >= 2) {
+        GridType::Point nxt = deEdge.path[1];
+        ctx->graph.intendedNext = nxt;
+        LOG_DEBUG("NG: NODE " << srcNode << " entering dead-end edge " << deIdx);
+        return nxt;
+      }
+    }
+    LOG_DEBUG("NG: NODE " << srcNode << " routeNodes empty, stay");
+    ctx->graph.intendedNext = {-1, -1};
+    return source;
+  }
+
+  int toNode = ctx->routeNodes[0];
+  if (toNode < 0) {
+    // A* reconstruction can emit -1 as a "to" index for dead-end edges.
+    // Guard here before passing it to getEdgeFromNodes, which would crash.
+    LOG_ERROR("NG: NODE " << srcNode << " routeNodes[0]=" << toNode
+                          << " invalid; re-routing");
+    resetRouteCache(ctx);
+    ctx->graph.intendedNext    = {-1, -1};
+    ctx->graph.cachedTgtNodeIdx = -1;
+    return source;
+  }
+  int edgeIdx = m_routingGraph.getEdgeFromNodes(srcNode, toNode);
+
+  // Try reverse direction if forward lookup fails
+  if (edgeIdx == -1) {
+    edgeIdx = m_routingGraph.getEdgeFromNodes(toNode, srcNode);
+    LOG_DEBUG("NG: NODE forward edge not found, tried reverse: " << edgeIdx);
+  }
+
+  if (edgeIdx == -1) {
+    LOG_ERROR("NG: NODE " << srcNode << " -> " << toNode << " no edge found; re-routing");
+    resetRouteCache(ctx);
+    ctx->graph.intendedNext = {-1, -1};
+    ctx->graph.cachedTgtNodeIdx = -1;
+    return source;
+  }
+
+  const auto &edge = m_baseEdges[edgeIdx];
+  // path[0] = edge.from position, path[last] = edge.to position
+  if (edge.path.size() < 2) {
+    LOG_ERROR("NG: Edge " << edgeIdx << " path too short");
+    return source;
+  }
+
+  GridType::Point nxt = (edge.from == srcNode)
+                            ? edge.path[1]
+                            : edge.path[edge.path.size() - 2];
+  // Record the intended next skeleton cell so Phase A (XPND fast-path) can
+  // continue toward it if the agent passes through off-skeleton cells while
+  // walking to the first cell of the new edge.
+  ctx->graph.intendedNext = nxt;
+  LOG_DEBUG("NG: NODE " << srcNode << " -> " << toNode
+                        << " via edge " << edgeIdx
+                        << " step to " << nxt.first << "," << nxt.second);
+  return nxt;
 }
+
+// ---------------------------------------------------------------------------
+// stepFromEdge
+//
+// Agent is on an edge corridor. Walk one step toward the end of the path that
+// leads to routeNodes[0].
+// ---------------------------------------------------------------------------
+
+GridType::Point NavigationGraph::stepFromEdge(Router::RouteCtx *ctx,
+                                              int edgeIdx,
+                                              GridType::Point source) const {
+  const auto &edge = m_baseEdges[edgeIdx];
+  auto it = std::find(edge.path.begin(), edge.path.end(), source);
+  if (it == edge.path.end()) {
+    LOG_ERROR("NG: EDGE " << edgeIdx << " source " << source.first << ","
+                          << source.second << " not found in path");
+    return source;
+  }
+
+  const int idx = static_cast<int>(std::distance(edge.path.begin(), it));
+
+  // Determine direction: which endpoint of this edge is next in our route?
+  // IMPORTANT: when edge.toDeadEnd == true, edge.to is a dead-end index, NOT a
+  // base node index. routeNodes only contains base node indices, so comparing
+  // edge.to against routeNodes[0] on a dead-end edge is a namespace collision
+  // that would falsely match (e.g. dead-end 1 == base node 1) and send the
+  // agent into the dead end. Dead-end tips are never route waypoints.
+  bool goForward = !edge.toDeadEnd; // default: toward edge.to unless it's a dead end
+  if (!ctx->routeNodes.empty()) {
+    if (!edge.toDeadEnd && edge.to == ctx->routeNodes[0]) {
+      goForward = true;
+    } else if (edge.from == ctx->routeNodes[0]) {
+      goForward = false;
+    } else {
+      // Neither reachable endpoint is our next waypoint — route is stale
+      LOG_INFO("NG: EDGE " << edgeIdx << " (" << edge.from << "->"
+                           << edge.to << (edge.toDeadEnd ? "(DEND)" : "")
+                           << ") neither endpoint matches routeNodes[0]="
+                           << ctx->routeNodes[0] << "; clearing route");
+      resetRouteCache(ctx);
+      ctx->graph.intendedNext = {-1, -1};
+      // Step toward the nearer end as a safe default
+      goForward = (idx > static_cast<int>(edge.path.size()) / 2);
+    }
+  } else if (edgeIdx == ctx->graph.tgtDeadEndEdgeIdx) {
+    // routeNodes consumed; we are intentionally entering this dead-end toward the target
+    goForward = true;
+  }
+
+  int nextIdx = goForward ? idx + 1 : idx - 1;
+  nextIdx = std::max(0, std::min(static_cast<int>(edge.path.size()) - 1, nextIdx));
+
+  if (nextIdx == idx) {
+    // Already at an endpoint — let the NODE handler pick it up next frame
+    LOG_DEBUG("NG: EDGE " << edgeIdx << " at endpoint idx " << idx);
+    return source;
+  }
+
+  LOG_DEBUG("NG: EDGE " << edgeIdx << " idx " << idx << " -> " << nextIdx
+                        << " (" << (goForward ? "fwd" : "bck") << ")");
+  // Record the chosen skeleton cell so the XPND fast-path can continue toward
+  // it if the agent steps off-skeleton during a diagonal traversal.
+  ctx->graph.intendedNext = edge.path[nextIdx];
+  return edge.path[nextIdx];
+}
+
+// ---------------------------------------------------------------------------
+// stepFromDeadEnd
+//
+// Agent is in a dead-end pocket. Always exit toward the connecting junction.
+// ---------------------------------------------------------------------------
+
+GridType::Point NavigationGraph::stepFromDeadEnd(int dendIdx,
+                                                 GridType::Point source) const {
+  int edgeIdx = m_routingGraph.getEdgeFromDead(dendIdx);
+  if (edgeIdx == -1) {
+    LOG_ERROR("NG: DEND " << dendIdx << " no edge found");
+    return source;
+  }
+  const auto &edge = m_baseEdges[edgeIdx];
+  if (edge.path.size() < 2) {
+    LOG_ERROR("NG: DEND edge " << edgeIdx << " path too short");
+    return source;
+  }
+  // path goes from junction → dead-end tip; we want second-to-last = one step toward junction
+  GridType::Point nxt = edge.path[edge.path.size() - 2];
+  LOG_DEBUG("NG: DEND " << dendIdx << " exit via edge " << edgeIdx
+                        << " to " << nxt.first << "," << nxt.second);
+  return nxt;
+}
+
+// ---------------------------------------------------------------------------
+// getNextMove  —  main per-frame decision
+//
+// Phases:
+//   A. XPND fast-path  (off-skeleton: follow expansion pointer)
+//   B. Locate target node
+//   C. Validate route (invalidate if target changed)
+//   D. Compute route if empty
+//   E. Stuck detection
+//   F. Step based on cell type
+// ---------------------------------------------------------------------------
 
 GridType::Point NavigationGraph::getNextMove(Router::RouteCtx *ctx,
                                              GridType::Point source,
                                              GridType::Point target) {
+  const int srcCell = m_infoGrid[source.second][source.first];
 
-  // Check source or target in wall
-  if (!checkBoundary(source))
-    return source;
-  if (!checkBoundary(target))
-    return source;
-
-  int srcCell = m_infoGrid[source.second][source.first];
-
-  //
-  // If on XPND then move towards edge
-  //
+  // ------------------------------------------------------------------
+  // Phase A: XPND fast-path
+  // Off-skeleton cells store a direction pointer toward the nearest edge.
+  // Normally we follow it immediately. BUT: skeleton edges can have diagonal
+  // steps. With L-shaped (axis-aligned) movement the agent passes through
+  // off-skeleton (XPND) cells on the way to the next skeleton cell. If we
+  // blindly follow the XPND pointer it points at the WRONG part of the
+  // skeleton and undoes the traversal every frame.
+  // Fix: stepFromEdge records its chosen next skeleton cell as intendedNext.
+  // While on XPND and that cell is still adjacent, continue toward it instead.
+  // ------------------------------------------------------------------
   if (srcCell & GridType::XPND) {
+    // If the agent is at or adjacent to the world target, navigate directly
+    // rather than letting XPND redirect it back to the skeleton. This stops
+    // oscillation when the world target itself lies in an XPND zone.
+    {
+      const int dx = std::abs(source.first  - target.first);
+      const int dy = std::abs(source.second - target.second);
+      if (dx <= 1 && dy <= 1) {
+        LOG_DEBUG("NG: XPND adjacent to world target "
+                  << target.first << "," << target.second << "; direct step");
+        return target;
+      }
+    }
+    const GridType::Point &inxt = ctx->graph.intendedNext;
+    if (inxt.first >= 0) {
+      const int dx = std::abs(source.first  - inxt.first);
+      const int dy = std::abs(source.second - inxt.second);
+      if (dx <= 1 && dy <= 1) {
+        LOG_DEBUG("NG: XPND override intendedNext -> " << inxt.first << "," << inxt.second);
+        return inxt;
+      }
+      // Too far from intended target — stale, fall through to raw XPND
+      ctx->graph.intendedNext = {-1, -1};
+      LOG_DEBUG("NG: XPND intendedNext stale, clearing");
+    }
     int dirIdx = GridType::get_XPND_DIR(srcCell);
     GridType::Point dir = GridType::directions8[dirIdx];
-    LOG_DEBUG("GM: At XPND move in dir: " << dir.first << "," << dir.second);
-    return nextPoint(source, dir);
+    GridType::Point nxt = {source.first + dir.first, source.second + dir.second};
+    LOG_DEBUG("NG: XPND -> " << nxt.first << "," << nxt.second);
+    return nxt;
   }
 
-  if (!ctx->routeNodes.empty()) {
-    if (srcCell & GridType::NODE) {
-      int from = srcCell & 0xffff;
-      LOG_DEBUG("DBG: At node: " << from);
-      if (ctx->routeNodes[0] == from) {
-        LOG_DEBUG("DBG: which is 1st of routeNodes");
-        ctx->routeNodes.erase(ctx->routeNodes.begin());
-        if (!ctx->routeNodes.empty()) {
-          int to = ctx->routeNodes[0];
-          int edgeIdx = m_routingGraph.getEdgeFromNodes(from, to);
-          const auto pnt = m_baseEdges[edgeIdx].path[1];
-          LOG_DEBUG("DBG: N1: " << from << " N2:" << to << " E: " << edgeIdx
-                                << " return path[1] " << pnt.first << ","
-                                << pnt.second);
-          return pnt;
-        }
-      }
-    }
-
-    if (srcCell & GridType::EDGE) {
-      int edgeIdx = srcCell & GridType::EDGE_MASK;
-      const auto &edge = m_baseEdges[edgeIdx];
-      LOG_DEBUG("DBG: At EDGE " << edgeIdx << " (" << edge.from << "->"
-                                << edge.to << ") => follow ");
-      auto it = std::find(edge.path.begin(), edge.path.end(), source);
-      if (it != edge.path.end()) {
-        size_t index = std::distance(edge.path.begin(), it);
-        int adj = (edge.from == ctx->routeNodes[0]) ? -1
-                  : (edge.to == ctx->routeNodes[0]) ? 1
-                                                    : 0;
-
-        if (adj != 0) {
-          LOG_DEBUG("DBG: Found src in path index:"
-                    << index << " adj: " << adj << " move to "
-                    << edge.path[index + adj].first << ","
-                    << edge.path[index + adj].second);
-          return edge.path[index + adj];
-        } else {
-          LOG_DEBUG("DBG: Found src in path but adj is 0 (stuck). Clearing "
-                    "routeNodes.");
-          ctx->routeNodes.clear();
-        }
-      } else {
-        LOG_ERROR("DBG: Source not found in path");
-      }
-    }
+  // ------------------------------------------------------------------
+  // Phase B: Locate target node
+  // ------------------------------------------------------------------
+  const ClosestNodeInfo tgtInfo = getClosestNode(target);
+  const int tgtNodeIdx = tgtInfo.nodeIdx;
+  if (tgtNodeIdx < 0) {
+    LOG_ERROR("NG: Could not locate target node for " << target.first
+                                                      << "," << target.second);
+    return source;
   }
 
-  // Check all the levels and find the level at which the zones are adjacent
-  int ablvIdx = -1;
-  int targetZone = -1;
-  int sourceZone = -1;
-  for (int levelIdx = 0;
-       (ablvIdx == -1) && (levelIdx < m_abstractLevels.size()); ++levelIdx) {
-    const auto &ablv = m_abstractLevels[levelIdx];
-    targetZone =
-        ablv.zoneGrid[target.second][target.first].closestAbstractNodeIdx;
-    sourceZone =
-        ablv.zoneGrid[source.second][source.first].closestAbstractNodeIdx;
-    // Check if in same zone for this level
-    if (targetZone == sourceZone) {
-      ablvIdx = levelIdx;
-      break;
+  // Determine if the target lies in/on a dead-end edge (updated every frame,
+  // cheap: one unordered_map lookup at most).
+  {
+    int deIdx = -1;
+    if (!tgtInfo.isEdge && tgtInfo.edgeOrDeadEndIdx >= 0) {
+      // Target is at a DEND tip cell — find the connecting edge
+      deIdx = m_routingGraph.getEdgeFromDead(tgtInfo.edgeOrDeadEndIdx);
+    } else if (tgtInfo.isEdge && tgtInfo.edgeOrDeadEndIdx >= 0) {
+      // Target is on an EDGE — check if it is a dead-end edge (to == -1)
+      if (m_routingGraph.edgeFromTos[tgtInfo.edgeOrDeadEndIdx].second == -1)
+        deIdx = tgtInfo.edgeOrDeadEndIdx;
     }
-
-    // Check if target is one of the source neighbors
-    for (int adjZone : ablv.zones[sourceZone].adjacentZones) {
-      if (adjZone == targetZone) {
-        ablvIdx = levelIdx;
-        break;
-      }
-    }
-  }
-  LOG_DEBUG("GM: Found: srcZ: " << sourceZone << " tgtZ: " << targetZone
-                                << " idx: " << ablvIdx);
-
-  // Get the ablv. Use top level if more than 1 zone apart
-  const auto &ablv = (ablvIdx != -1)
-                         ? m_abstractLevels[ablvIdx]
-                         : m_abstractLevels[m_abstractLevels.size() - 1];
-
-  // Route through the appropriate level based on zone distance
-  // If at Node use that
-  std::optional<int> srcNodeIdx = (srcCell & GridType::NODE)
-                                      ? std::optional<int>(srcCell & 0xffff)
-                                      : std::nullopt;
-  // If at Edge use that
-  std::optional<int> srcEdgeIdx =
-      (srcCell & GridType::EDGE)
-          ? std::optional<int>(srcCell & GridType::EDGE_MASK)
-          : std::nullopt;
-  // Otherwise find the closest node
-  if (!srcNodeIdx && !srcEdgeIdx) {
-    LOG_DEBUG("GM: Not N/E FindCloset to source " << source.first << ","
-                                                  << source.second);
-    const auto &srcEdgeOrDed = getClosestNode(source);
-    srcNodeIdx = srcEdgeOrDed.nodeIdx;
+    ctx->graph.tgtDeadEndEdgeIdx = deIdx;
   }
 
-  LOG_DEBUG("GM: source node/edge found. Find target");
-
-  // If same zone then use the node
-  // want to have "find closest node using XPND edges NODE"
-  ClosestNodeInfo tgtEdgeOrDed =
-      (sourceZone == targetZone)
-          ? getClosestNode(target)
-          : ClosestNodeInfo{ablv.abstractNodes[targetZone].baseCenterNode, -1,
-                            false, target};
-  LOG_DEBUG("GM: Got TGT closest node: " << tgtEdgeOrDed.nodeIdx << " edge: "
-                                         << tgtEdgeOrDed.edgeOrDeadEndIdx
-                                         << " isEdge: " << tgtEdgeOrDed.isEdge);
-
-  int tgtNodeIdx = tgtEdgeOrDed.nodeIdx;
-  // -1 = same zone, >=0 = adjacent zone index, -2 = distant
-  int zoneRelationship = (ablvIdx == -1)              ? -2
-                         : (sourceZone == targetZone) ? -1
-                                                      : ablvIdx;
-
-  // If in the same zone, the src and tgt are the same node
-  // then use the edge connecting to the other node
-  if (zoneRelationship == -1 && srcNodeIdx && *srcNodeIdx == tgtNodeIdx &&
-      tgtEdgeOrDed.edgeOrDeadEndIdx >= 0) {
-    int edgeIdx =
-        (tgtEdgeOrDed.isEdge)
-            ? tgtEdgeOrDed.edgeOrDeadEndIdx
-            : m_routingGraph.getEdgeFromDead(tgtEdgeOrDed.edgeOrDeadEndIdx);
-    if (edgeIdx != -1) {
-      const auto &edge = m_baseEdges[edgeIdx];
-      const auto &path = edge.path;
-      const auto it = std::find(path.begin(), path.end(), source);
-      if (it != path.end()) {
-        int idx = std::distance(path.begin(), it);
-
-        // Find the target on the path to know which way to go
-        // Use the closest graph point from the target info
-        const auto itTgt =
-            std::find(path.begin(), path.end(), tgtEdgeOrDed.closestGraphPoint);
-        int tgtIdx = -1;
-        if (itTgt != path.end()) {
-          tgtIdx = std::distance(path.begin(), itTgt);
-        } else {
-          // If not found, find the closest point on the path
-          int minDist = std::numeric_limits<int>::max();
-          for (int i = 0; i < path.size(); ++i) {
-            int d =
-                std::abs(path[i].first - tgtEdgeOrDed.closestGraphPoint.first) +
-                std::abs(path[i].second -
-                         tgtEdgeOrDed.closestGraphPoint.second);
-            if (d < minDist) {
-              minDist = d;
-              tgtIdx = i;
-            }
-          }
-        }
-
-        LOG_DEBUG("DBG=== Found Source "
-                  << source.first << "," << source.second << " idx: " << idx
-                  << " tgtNode: " << tgtNodeIdx << " (" << edge.from << "->"
-                  << edge.to << (edge.toDeadEnd ? " (DED)" : "")
-                  << ") tgtIdx: " << tgtIdx);
-
-        if (tgtIdx != -1) {
-          int nextIdx = -1;
-          if (idx < tgtIdx) {
-            nextIdx = std::min(static_cast<int>(path.size()) - 1, idx + 1);
-            LOG_DEBUG("DBG=== Move FWD (Towards Tgt) to "
-                      << path[nextIdx].first << "," << path[nextIdx].second);
-          } else if (idx > tgtIdx) {
-            nextIdx = std::max(0, idx - 1);
-            LOG_DEBUG("DBG=== Move BCK (Towards Tgt) to "
-                      << path[nextIdx].first << "," << path[nextIdx].second);
-          } else {
-            LOG_DEBUG("DBG=== At Target Index. Move to precise target");
-            // Check if target itself is a wall?
-            return nextStep(source, target);
-          }
-
-          if (nextIdx != -1) {
-            return nextStep(source, path[nextIdx]);
-          }
-        } else {
-          // Fallback if something went wrong finding target on path
-          // (Should be covered by else case above)
-          LOG_DEBUG("DBG=== Target not found on path, default logic");
-          if (tgtNodeIdx != edge.from) {
-            idx = std::max(0, idx - 1);
-            LOG_DEBUG("DBG=== Move BCK to " << path[idx].first << ","
-                                            << path[idx].second);
-            return nextStep(source, path[idx]);
-          } else {
-            idx = std::min(static_cast<int>(path.size()) - 1, idx + 1);
-            LOG_DEBUG("DBG=== Move FWD to " << path[idx].first << ","
-                                            << path[idx].second);
-            return nextStep(source, path[idx]);
-          }
-        }
-
-      } else {
-        LOG_DEBUG("DBG=== Source " << source.first << "," << source.second
-                                   << " Not found in Edge: " << edgeIdx << " ("
-                                   << edge.from << "->" << edge.to
-                                   << (edge.toDeadEnd ? " (DED)" : ""));
-      }
-    } else {
-      LOG_DEBUG("DBG=== No edge found");
-    }
-  }
-  LOG_DEBUG("GM: tgtNode: " << tgtNodeIdx << " => Find routeNodes");
-
-  // Special case: Source is on an edge.
-  if (srcCell & GridType::EDGE) {
-    int currentEdgeIdx = srcCell & GridType::EDGE_MASK;
-
-    // Check if target is on the same edge or in a dead end connected to this
-    // edge.
-    int targetEdgeIdx = -1;
-    bool targetIsDeadEnd = false;
-
-    if (tgtEdgeOrDed.isEdge) {
-      targetEdgeIdx = tgtEdgeOrDed.edgeOrDeadEndIdx;
-    } else if (tgtEdgeOrDed.edgeOrDeadEndIdx >= 0) {
-      // Target is in a dead end.
-      targetEdgeIdx =
-          m_routingGraph.getEdgeFromDead(tgtEdgeOrDed.edgeOrDeadEndIdx);
-      targetIsDeadEnd = true;
-      LOG_DEBUG("GM: tgt edge: " << targetEdgeIdx << " from DeadIdx:"
-                                 << tgtEdgeOrDed.edgeOrDeadEndIdx);
-    }
-    LOG_DEBUG("GM: curEdge:" << currentEdgeIdx << " tgtEdge:" << targetEdgeIdx
-                             << " dend:" << targetIsDeadEnd);
-
-    if (currentEdgeIdx != -1 && currentEdgeIdx == targetEdgeIdx) {
-      // We are on the correct edge.
-      // Determine direction.
-      const auto &edge = m_baseEdges[currentEdgeIdx];
-      auto itSrc = std::find(edge.path.begin(), edge.path.end(), source);
-      if (itSrc != edge.path.end()) {
-        int srcIdx = std::distance(edge.path.begin(), itSrc);
-
-        int tgtPathIdx = -1;
-        if (targetIsDeadEnd) {
-          // Dead End: Target is effectively at the end of the path.
-          tgtPathIdx = edge.path.size() - 1;
-          LOG_DEBUG("GM: put tgt at end of path: " << tgtPathIdx);
-        } else {
-          // Target is on the edge. Search for it on the path.
-          // Note: target point might not be exactly on the path if it's
-          // floating point, but here we are dealing with integer grid points.
-          // If target is not found, we might need to find the closest point on
-          // path.
-          auto itTgt = std::find(edge.path.begin(), edge.path.end(),
-                                 tgtEdgeOrDed.closestGraphPoint);
-          if (itTgt != edge.path.end()) {
-            tgtPathIdx = std::distance(edge.path.begin(), itTgt);
-            LOG_DEBUG("GM: target (closestGraphPoint):"
-                      << tgtEdgeOrDed.closestGraphPoint.first << ","
-                      << tgtEdgeOrDed.closestGraphPoint.second
-                      << " found on path idx: " << tgtPathIdx);
-          } else {
-            LOG_DEBUG("GM: target (closestGraphPoint):"
-                      << tgtEdgeOrDed.closestGraphPoint.first << ","
-                      << tgtEdgeOrDed.closestGraphPoint.second
-                      << " not found on path. Search path for closest");
-            // Fallback: Find closest point on path to target
-            // Use closestGraphPoint as the target reference if available
-            GridType::Point refTgt = tgtEdgeOrDed.closestGraphPoint;
-
-            int minDist = std::numeric_limits<int>::max();
-            for (int i = 0; i < edge.path.size(); ++i) {
-              int d = std::abs(edge.path[i].first - refTgt.first) +
-                      std::abs(edge.path[i].second - refTgt.second);
-              if (d < minDist) {
-                LOG_DEBUG("GM: losest pnt:" << i << " " << edge.path[i].first
-                                            << "," << edge.path[i].second
-                                            << " dist:" << d);
-                minDist = d;
-                tgtPathIdx = i;
-              }
-            }
-          }
-        }
-
-        if (tgtPathIdx != -1) {
-          LOG_DEBUG("GM: On same edge as target. srcIdx:"
-                    << srcIdx << " tgtIdx:" << tgtPathIdx);
-          if (srcIdx < tgtPathIdx) {
-            return nextStep(source, edge.path[srcIdx + 1]);
-          } else if (srcIdx > tgtPathIdx) {
-            return nextStep(source, edge.path[srcIdx - 1]);
-          } else {
-            return nextStep(source, target);
-          }
-        }
-      }
-    }
+  // ------------------------------------------------------------------
+  // Phase C: Invalidate stale route when the target node changed
+  // ------------------------------------------------------------------
+  if (!ctx->routeNodes.empty() &&
+      ctx->graph.cachedTgtNodeIdx != tgtNodeIdx) {
+    LOG_INFO("NG: Target changed " << ctx->graph.cachedTgtNodeIdx
+                                   << " -> " << tgtNodeIdx
+                                   << "; clearing route");
+    resetRouteCache(ctx);
+    ctx->graph.intendedNext = {-1, -1};
   }
 
-  ctx->routeNodes = m_routingGraph.findRoute(
-      ctx, ablv.zones, ablv.abstractEdges, srcNodeIdx, srcEdgeIdx, tgtNodeIdx,
-      sourceZone, targetZone, zoneRelationship);
-
-  // Route using the list of nodes for the path
-  LOG_DEBUG_CONT("GM: Use routeNodes: ");
-  LOG_DEBUG_FOR(int n : ctx->routeNodes, n << " ");
+  // ------------------------------------------------------------------
+  // Phase D: Build route if empty
+  // ------------------------------------------------------------------
   if (ctx->routeNodes.empty()) {
-    if (zoneRelationship == -1) {
-      LOG_DEBUG(
-          "GM: No routeNodes, but same zone => use tgtNode: " << tgtNodeIdx);
-      ctx->routeNodes.push_back(tgtNodeIdx);
-    } else {
-      LOG_DEBUG("ERROR: No routeNodes srcZ:" << sourceZone
-                                             << " tgtZ:" << targetZone);
-      return nextStep(source, target);
+    // If the agent is at the junction node for the target dead-end, or is
+    // already traversing that dead-end edge, skip A* entirely — Phase F handles
+    // the stepping via the tgtDeadEndEdgeIdx branches.
+    bool skipToPhaseF = false;
+    if (ctx->graph.tgtDeadEndEdgeIdx >= 0) {
+      const int deFromNode = m_baseEdges[ctx->graph.tgtDeadEndEdgeIdx].from;
+      const bool atJunction    = (srcCell & GridType::NODE) &&
+                                 ((srcCell & 0xffff) == deFromNode);
+      const bool onDeadEndEdge = (srcCell & GridType::EDGE) &&
+                                 ((srcCell & GridType::EDGE_MASK) ==
+                                  ctx->graph.tgtDeadEndEdgeIdx);
+      skipToPhaseF = (atJunction || onDeadEndEdge);
     }
-  }
-
-  // If at DeadEnd then move back towards the connected node
-  LOG_DEBUG("GM: Check DEND srcCell:" << std::hex << srcCell << " DEND:"
-                                      << GridType::DEND << std::dec);
-  if (srcCell & GridType::DEND) {
-    int dendIdx = srcCell & 0xffff;
-    LOG_DEBUG("GM: src at DEND: " << dendIdx);
-    int edgeIdx = m_routingGraph.getEdgeFromDead(dendIdx);
-    if (edgeIdx != -1) {
-      const auto &edge = m_baseEdges[edgeIdx];
-      // Edge goes From -> DeadEnd
-      // We are at DeadEnd, so move back towards From
-      if (edge.path.size() >= 2) {
-        const auto &nxt = edge.path[edge.path.size() - 2];
-        LOG_DEBUG("GM:  DEND edge: " << edgeIdx << " " << edge.from << "->"
-                                     << edge.to << " move back to " << nxt.first
-                                     << "," << nxt.second);
-        return nextStep(source, nxt);
+    if (!skipToPhaseF) {
+      // Route was already computed for this target and fully consumed.
+      // Suppress A* only while the agent is close to the target node (final
+      // approach / arrived). If the agent has drifted far away (e.g. pushed by
+      // physics after route was consumed), clear the cache so A* re-routes.
+      if (ctx->graph.cachedTgtNodeIdx == tgtNodeIdx) {
+        const int dx = std::abs(source.first  - tgtInfo.closestGraphPoint.first);
+        const int dy = std::abs(source.second - tgtInfo.closestGraphPoint.second);
+        if (dx + dy <= 4) {
+          LOG_DEBUG("NG: Route consumed for tgt node " << tgtNodeIdx << "; direct nav");
+          return source;
+        }
+        LOG_INFO("NG: Route consumed but far from node " << tgtNodeIdx
+                 << " (dist=" << (dx + dy) << "); re-routing");
+        resetRouteCache(ctx);
+        ctx->graph.cachedTgtNodeIdx = -1;
       }
-    }
-    LOG_ERROR("Failed to find edge for DEND:" << dendIdx);
-  }
-
-  // If at a Node then search edges to find one going from node
-  if (srcCell & GridType::NODE) {
-    int srcNode = srcCell & 0xffff;
-    LOG_DEBUG("GM: src at Node: " << srcNode);
-    int toIdx = (srcNode == ctx->routeNodes[0]) ? ctx->routeNodes[1]
-                                                : ctx->routeNodes[0];
-    LOG_DEBUG("GM: src: " << srcNode << " to:" << toIdx);
-
-    // Find edge connecting nodeA to nodeB
-    for (const auto &[neighbor, edgeIdx] :
-         m_routingGraph.forwardConnections[srcNode]) {
-      LOG_DEBUG("GM:   Check edge:" << edgeIdx << " neigh: " << neighbor
-                                    << " vs to: " << toIdx);
-      if (neighbor == toIdx) {
-        const auto &edge = m_baseEdges[edgeIdx];
-        const auto &nxt = (edge.from == srcNode)
-                              ? edge.path[1]
-                              : edge.path[edge.path.size() - 2];
-        LOG_DEBUG("GM:  edge: " << edgeIdx << " " << edge.from << "->"
-                                << edge.to << " nxtPnt:" << nxt.first << ","
-                                << nxt.second);
-        return nextStep(source, nxt);
-      }
-    }
-    LOG_DEBUG("ERROR: Failed to find edge for node:" << srcNode << "->"
-                                                     << toIdx);
-  }
-
-  // If at Edge then find the source on the path and move to the next/prev
-  if (srcCell & GridType::EDGE) {
-    int edgeIdx = srcCell & GridType::EDGE_MASK;
-    LOG_DEBUG("GM: src at Edge: " << edgeIdx);
-    const auto &edge = m_baseEdges[edgeIdx];
-
-    int index = std::find(edge.path.begin(), edge.path.end(), source) -
-                edge.path.begin();
-    if (index != edge.path.size()) {
-      LOG_DEBUG("GM:   found src: " << source.first << "," << source.second
-                                    << " in " << edge.from << "->" << edge.to
-                                    << " path sz:" << edge.path.size()
-                                    << " at idx: " << index);
-      GridType::Point nxt;
-      index += (edge.from == ctx->routeNodes[0]) ? -1 : 1;
-      if (index < 0) {
-        nxt = m_baseNodes[edge.from];
-        LOG_DEBUG_CONT("GM:  At path start use fromNode: " << edge.from);
-      } else if (index >= edge.path.size()) {
-        nxt = edge.toDeadEnd ? m_deadEnds[edge.to] : m_baseNodes[edge.to];
-        LOG_DEBUG_CONT("GM:  At path end use toNode: " << edge.to);
+      // Resolve source to node/edge for the A* call
+      std::optional<int> srcNodeIdx;
+      std::optional<int> srcEdgeIdx;
+      if (srcCell & GridType::NODE) {
+        srcNodeIdx = srcCell & 0xffff;
+      } else if (srcCell & GridType::EDGE) {
+        srcEdgeIdx = srcCell & GridType::EDGE_MASK;
       } else {
-        nxt = edge.path[index];
-        LOG_DEBUG_CONT("GM:  move along path to idx:" << index);
+        ClosestNodeInfo srcInfo = getClosestNode(source);
+        if (srcInfo.nodeIdx >= 0) {
+          srcNodeIdx = srcInfo.nodeIdx;
+        } else if (srcInfo.isEdge && srcInfo.edgeOrDeadEndIdx >= 0) {
+          srcEdgeIdx = srcInfo.edgeOrDeadEndIdx;
+        } else {
+          // getClosestNode could not resolve source to any graph element.
+          // This means srcCell is not NODE/EDGE/DEND/XPND, or the XPND chain
+          // led to an unclassified cell. Log the raw cell so the root cause
+          // can be identified.
+          LOG_INFO("NG: Phase D: unresolvable source " << source.first << ","
+                   << source.second << " srcCell=0x" << std::hex << srcCell
+                   << " GCN closestPt=" << srcInfo.closestGraphPoint.first
+                   << "," << srcInfo.closestGraphPoint.second
+                   << " cell=0x"
+                   << m_infoGrid[srcInfo.closestGraphPoint.second][srcInfo.closestGraphPoint.first]
+                   << std::dec
+                   << " isEdge=" << srcInfo.isEdge
+                   << " eoDE=" << srcInfo.edgeOrDeadEndIdx);
+        }
       }
-      LOG_DEBUG(" nxtPnt:" << nxt.first << "," << nxt.second);
 
-      // DEBUG: Inspection for 28,16 -> 29,17
-      if (source.first == 28 && source.second == 16 && nxt.first == 29 &&
-          nxt.second == 17) {
-        int c28_17 = m_infoGrid[17][28];
-        int c29_16 = m_infoGrid[16][29];
-        LOG_DEBUG("DEBUG_INSPECT: 28,17: " << std::hex << c28_17 << " IS_WALL:"
-                                           << (c28_17 & GridType::WALL));
-        LOG_DEBUG("DEBUG_INSPECT: 29,16: " << std::hex << c29_16 << " IS_WALL:"
-                                           << (c29_16 & GridType::WALL));
+      ZoneInfo zi = findZoneRelationship(source, target);
+
+      if (!ensureRoute(ctx, zi, srcNodeIdx, srcEdgeIdx, tgtNodeIdx)) {
+        LOG_INFO("NG: No route found src=" << source.first << "," << source.second
+                                           << " tgt=" << target.first << ","
+                                           << target.second << "; staying");
+        return source;
       }
-
-      return nextStep(source, nxt);
+      ctx->graph.cachedTgtNodeIdx = tgtNodeIdx;
     }
-    LOG_ERROR("Failed to src: " << source.first << "," << source.second
-                                << " in path for edge: " << edgeIdx);
-    return nextStep(source, target);
   }
-  //
-  // If on XPND then move towards edge
-  // Removed from here to be placed at end of function to allow routeNodes to be
-  // populated
-  //
 
-  LOG_ERROR("Not on EDGE or NODE");
-  return nextStep(source, target);
+  // ------------------------------------------------------------------
+  // Phase E: Stuck detection
+  // If the agent has been on the same grid cell for too long, the route
+  // is discarded so it will be recomputed next frame, and we step toward
+  // the nearest edge endpoint to break the deadlock (e.g. head-on agents).
+  // ------------------------------------------------------------------
+  if (source == ctx->graph.lastGridPos) {
+    ctx->graph.stuckFrames++;
+    if (ctx->graph.stuckFrames >= STUCK_THRESHOLD) {
+      LOG_INFO("NG: STUCK " << ctx->graph.stuckFrames << " frames at "
+                            << source.first << "," << source.second
+                            << "; forcing escape");
+      resetRouteCache(ctx);
+      ctx->graph.cachedTgtNodeIdx = -1;
+      ctx->graph.stuckFrames      = 0;
+      ctx->graph.intendedNext     = {-1, -1};
+
+      // Escape: if on an edge, step toward its nearer endpoint
+      if (srcCell & GridType::EDGE) {
+        int eIdx = srcCell & GridType::EDGE_MASK;
+        const auto &edge = m_baseEdges[eIdx];
+        auto it = std::find(edge.path.begin(), edge.path.end(), source);
+        if (it != edge.path.end()) {
+          int idx = static_cast<int>(std::distance(edge.path.begin(), it));
+          // Step toward whichever end is closer
+          bool goFwd = idx > static_cast<int>(edge.path.size()) / 2;
+          int ni = goFwd ? std::min(idx + 1, (int)edge.path.size() - 1)
+                         : std::max(idx - 1, 0);
+          if (ni != idx)
+            return edge.path[ni];
+        }
+      }
+      return source; // stay; re-route happens next frame
+    }
+  } else {
+    ctx->graph.stuckFrames = 0;
+  }
+  ctx->graph.lastGridPos = source;
+
+  // ------------------------------------------------------------------
+  // Phase F: Step based on cell type
+  // ------------------------------------------------------------------
+  const CellKind kind = classifyCell(srcCell);
+
+  if (kind == CellKind::NODE) {
+    return stepFromNode(ctx, srcCell & 0xffff, source);
+  }
+  if (kind == CellKind::EDGE) {
+    return stepFromEdge(ctx, srcCell & GridType::EDGE_MASK, source);
+  }
+  if (kind == CellKind::DEND) {
+    GridType::Point nxt = stepFromDeadEnd(srcCell & 0xffff, source);
+    ctx->graph.intendedNext = nxt; // guard XPND redirect on the way out of the dead end
+    return nxt;
+  }
+
+  LOG_ERROR("NG: Unknown cell type at " << source.first << "," << source.second
+                                        << " cell: " << std::hex << srcCell
+                                        << std::dec);
+
+  // The agent is on a cell with no recognized navigation type (not NODE/EDGE/
+  // DEND/XPND). This can happen when physics pushes the agent into a floor cell
+  // that the navmesh expansion didn't cover. If routeNodes is non-empty, Phase D
+  // is skipped every frame so the route is never rebuilt — causing a permanent
+  // silent "same-cell" loop. Reset the route and step toward the nearest
+  // adjacent skeleton cell so the agent can re-enter the navmesh.
+  resetRouteCache(ctx);
+  ctx->graph.cachedTgtNodeIdx = -1;
+  ctx->graph.intendedNext     = {-1, -1};
+  {
+    const int rows = static_cast<int>(m_infoGrid.size());
+    const int cols = (rows > 0) ? static_cast<int>(m_infoGrid[0].size()) : 0;
+    for (const auto &d : GridType::directions8) {
+      const int nx = source.first  + d.first;
+      const int ny = source.second + d.second;
+      if (nx >= 0 && ny >= 0 && ny < rows && nx < cols) {
+        const int nc = m_infoGrid[ny][nx];
+        if (nc & (GridType::NODE | GridType::EDGE | GridType::XPND | GridType::DEND)) {
+          ctx->graph.intendedNext = {nx, ny};
+          return {nx, ny};
+        }
+      }
+    }
+  }
+  return source;
 }
+
+// ---------------------------------------------------------------------------
+// getMoveDirection  —  public API
+//
+// Converts world float coordinates to grid cells, delegates to getNextMove,
+// then converts the returned next-cell centre back to a steering angle.
+// ---------------------------------------------------------------------------
 
 float NavigationGraph::getMoveDirection(Router::RouteCtx *ctx,
                                         GridType::Vec2 from, GridType::Vec2 to,
                                         int type, float /*dt*/) {
-  GridType::Point fromPnt = {from.x / (m_info.mCellWidth * CELL_MULT),
-                             from.y / (m_info.mCellHeight * CELL_MULT)};
-  GridType::Point toPnt = {to.x / (m_info.mCellWidth * CELL_MULT),
-                           to.y / (m_info.mCellHeight * CELL_MULT)};
-  LOG_DEBUG("---GETANGLE: from:"
-            << from.x << "," << from.y << " to:" << to.x << "," << to.y
-            << "  cell: " << m_info.mCellWidth << "x" << m_info.mCellHeight
-            << " => " << fromPnt.first << "," << fromPnt.second
-            << " to:" << toPnt.first << "," << toPnt.second);
+  const float cellSizeX = m_info.mCellWidth  * static_cast<float>(CELL_MULT);
+  const float cellSizeY = m_info.mCellHeight * static_cast<float>(CELL_MULT);
 
-  LOG_DEBUG("---------------to:" << to.x << "," << to.y << " => " << toPnt.first
-                                 << "," << toPnt.second);
-  LOG_DEBUG("      CTX: F: "
-            << ctx->from.first << "," << ctx->from.second
-            << " CtxTo: " << ctx->to.first << "," << ctx->to.second
-            << " CtxNxt: " << ctx->next.first << "," << ctx->next.second
-            << " CtxtDir: " << ctx->curDir << " FPNT: " << fromPnt.first << ","
-            << fromPnt.second << " TPNT: " << toPnt.first << "," << toPnt.second
-            << " last: " << ((int)ctx->lastRouteType)
-            << " ctxType: " << ctx->type << " type: " << type);
-
-
+  GridType::Point fromPnt = {static_cast<int>(from.x / cellSizeX),
+                             static_cast<int>(from.y / cellSizeY)};
+  GridType::Point toPnt   = {static_cast<int>(to.x   / cellSizeX),
+                             static_cast<int>(to.y   / cellSizeY)};
 
   ctx->from = fromPnt;
-  ctx->to = toPnt;
+  ctx->to   = toPnt;
 
-  LOG_DEBUG("===GETNEXTMOVE: " << fromPnt.first << "," << fromPnt.second
-                               << " TO " << toPnt.first << "," << toPnt.second
-                               << " ruse:" << ctx->reuseCnt);
   ctx->next = getNextMove(ctx, fromPnt, toPnt);
 
-  // If next point is same as current, we are at the target cell approx.
-  // just return direction to target
+  // If the next cell is the same as the current cell we are essentially at the
+  // target — steer directly toward the world target position.
   if (ctx->next == fromPnt) {
     ctx->curDir = computeAngle(to.x - from.x, to.y - from.y);
-    LOG_DEBUG("==>ANG (SameCell) from:" << from.x << "," << from.y
-                                        << " TO: " << to.x << "," << to.y
-                                        << " = " << ctx->curDir);
+    LOG_DEBUG("NG: same-cell -> direct angle " << ctx->curDir);
     return ctx->curDir;
   }
 
-  // Calculate center of next cell in world coords
-  // Assuming 8x8 blocks as per getClosest/m_info usages essentially mean 1
-  // "Navigation Gird Cell" = width/height * CELL_MULT world units? Wait, in
-  // testLott: info.mCellWidth = 8; fromPnt = {from.x / (m_info.mCellWidth *
-  // CELL_MULT), ...} So Cell Size = mCellWidth * CELL_MULT = 64. Center = index
-  // * 64 + 32.
-  float cellSizeX = m_info.mCellWidth * CELL_MULT;
-  float cellSizeY = m_info.mCellHeight * CELL_MULT;
-  GridType::Point tgtCell = ctx->next;
+  // Steer toward the centre of the next grid cell
+  float nextCX = ctx->next.first  * cellSizeX + cellSizeX * 0.5f;
+  float nextCY = ctx->next.second * cellSizeY + cellSizeY * 0.5f;
+  ctx->curDir = computeAngle(nextCX - from.x, nextCY - from.y);
 
-#if 0
-  // Steering Corner Avoidance:
-  // If moving diagonally, check if we are clipping a wall corner.
-  // If so, steer towards the SAFE neighbor first to clear the corner.
-  int dx = ctx->next.first - fromPnt.first;
-  int dy = ctx->next.second - fromPnt.second;
-  if (std::abs(dx) == 1 && std::abs(dy) == 1) {
-    // Check Horizontal Neighbor
-    GridType::Point hNeighbor = {fromPnt.first + dx, fromPnt.second};
-    bool hWall = false;
-    if (hNeighbor.second >= 0 && hNeighbor.second < m_infoGrid.size() &&
-        hNeighbor.first >= 0 && hNeighbor.first < m_infoGrid[0].size()) {
-      hWall = (m_infoGrid[hNeighbor.second][hNeighbor.first] & GridType::WALL);
-    }
-
-    // Check Vertical Neighbor
-    GridType::Point vNeighbor = {fromPnt.first, fromPnt.second + dy};
-    bool vWall = false;
-    if (vNeighbor.second >= 0 && vNeighbor.second < m_infoGrid.size() &&
-        vNeighbor.first >= 0 && vNeighbor.first < m_infoGrid[0].size()) {
-      vWall = (m_infoGrid[vNeighbor.second][vNeighbor.first] & GridType::WALL);
-    }
-
-    if (hWall && !vWall) {
-      // Horizontal is blocked, steer Vertical (to vNeighbor)
-      tgtCell = vNeighbor;
-      LOG_DEBUG("  STEER AVOID: Horiz blocked, steering to " << tgtCell.first << "," << tgtCell.second);
-    } else if (vWall && !hWall) {
-      // Vertical is blocked, steer Horizontal (to hNeighbor)
-      tgtCell = hNeighbor;
-      LOG_DEBUG("  STEER AVOID: Vert blocked, steering to " << tgtCell.first << "," << tgtCell.second);
-    }
-  }
-#endif
-
-  float nextCenterX = (tgtCell.first * cellSizeX) + (cellSizeX * 0.5f);
-  float nextCenterY = (tgtCell.second * cellSizeY) + (cellSizeY * 0.5f);
-
-  ctx->curDir = computeAngle(nextCenterX - from.x, nextCenterY - from.y);
-  LOG_DEBUG("==>ANG from:" << from.x << "," << from.y << " NXT_CELL: "
-                           << ctx->next.first << "," << ctx->next.second
-                           << " STEER_CELL: " << tgtCell.first << ","
-                           << tgtCell.second << " NXT_CENTER: " << nextCenterX
-                           << "," << nextCenterY << " = " << ctx->curDir);
+  LOG_DEBUG("NG: from " << fromPnt.first << "," << fromPnt.second
+                        << " next " << ctx->next.first << "," << ctx->next.second
+                        << " angle " << ctx->curDir);
   return ctx->curDir;
 }
 

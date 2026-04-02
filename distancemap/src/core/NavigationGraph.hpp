@@ -49,23 +49,48 @@ private:
   const std::vector<GridType::Point> &m_deadEnds;
   const std::vector<GridToGraph::AbstractLevel> &m_abstractLevels;
 
-  // Helpers
+  // Cell classification
+  enum class CellKind { NODE, EDGE, DEND, XPND, OTHER };
+  static CellKind classifyCell(int cell);
+
+  // Closest graph point lookup (fixes stale edgeIdx after XPND walk)
   struct ClosestNodeInfo {
     int nodeIdx;
-    int edgeOrDeadEndIdx;
+    int edgeOrDeadEndIdx; // edge index if isEdge, dead-end index if !isEdge
     bool isEdge;
     GridType::Point closestGraphPoint;
   };
+  ClosestNodeInfo getClosestNode(const GridType::Point &pos) const;
 
+  // Zone-level routing helpers
+  struct ZoneInfo {
+    int sourceZone    = -1;
+    int targetZone    = -1;
+    int ablvIdx       = -1;  // -1 = not found (use top level), >=0 = level index
+    int relationship  = -2;  // -1 same zone, >=0 adjacent level, -2 distant
+  };
+  ZoneInfo findZoneRelationship(const GridType::Point &source,
+                                const GridType::Point &target) const;
+
+  // Route management: populate ctx->routeNodes if stale/empty; returns true on success
+  bool ensureRoute(Router::RouteCtx *ctx,
+                   const ZoneInfo &zones,
+                   std::optional<int> srcNodeIdx,
+                   std::optional<int> srcEdgeIdx,
+                   int tgtNodeIdx) const;
+
+  // Per-cell-type stepping (each returns the next grid cell to move into)
+  GridType::Point stepFromNode   (Router::RouteCtx *ctx, int srcNode,
+                                  GridType::Point source) const;
+  GridType::Point stepFromEdge   (Router::RouteCtx *ctx, int edgeIdx,
+                                  GridType::Point source) const;
+  GridType::Point stepFromDeadEnd(int dendIdx, GridType::Point source) const;
+
+  // Main per-frame step logic
   GridType::Point getNextMove(Router::RouteCtx *ctx, GridType::Point source,
                               GridType::Point target);
-  ClosestNodeInfo getClosestNode(const GridType::Point &pos);
 
-  GridType::Point nextStep(const GridType::Point &from,
-                           const GridType::Point &to);
-  GridType::Point nextPoint(const GridType::Point &from,
-                            const GridType::Point &dir);
-  float computeAngle(double dx, double dy);
+  float computeAngle(double dx, double dy) const;
 };
 
 } // namespace Routing
