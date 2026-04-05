@@ -99,7 +99,8 @@ NavigationGraph::getClosestNode(const GridType::Point &pos) const {
     edgePnt.second += GridType::directions8[dir].second * dst;
     cell = m_infoGrid[edgePnt.second][edgePnt.first];
     LOG_DEBUG("GCN: XPND => " << edgePnt.first << "," << edgePnt.second
-                               << " cell: " << std::hex << cell << std::dec);
+      << " dir: " << GridType::directions8[dir].first << "," << GridType::directions8[dir].second
+      << " dst: " << dst << " cell: " << std::hex << cell << std::dec);
   }
 
   if (cell & GridType::EDGE) {
@@ -233,7 +234,9 @@ bool NavigationGraph::ensureRoute(Router::RouteCtx *ctx,
   ctx->routeNodes = m_routingGraph.findRoute(
       ctx, ablv.zones, ablv.abstractEdges,
       srcNodeIdx, srcEdgeIdx, tgtNodeIdx,
-      zi.sourceZone, zi.targetZone, zi.relationship);
+      zi.sourceZone, zi.targetZone, zi.relationship,
+      ctx->graph.agentCostBias,
+      ctx->graph.agentMaxPerturbation);
 
   // Empty-route fallback: A* returns an empty edge-path in two legitimate cases:
   //   1. Source IS the target node (0 edges to traverse).
@@ -257,6 +260,8 @@ bool NavigationGraph::ensureRoute(Router::RouteCtx *ctx,
   if (!ctx->routeNodes.empty()) {
     LOG_INFO("NG: Route computed: " << ctx->routeNodes.size()
                                     << " nodes -> tgt " << tgtNodeIdx);
+    LOG_DEBUG_CONT("RouteNodes; ");
+    LOG_DEBUG_FOR(auto rn : ctx->routeNodes, " " << rn);
   }
   return !ctx->routeNodes.empty();
 }
@@ -302,7 +307,8 @@ GridType::Point NavigationGraph::stepFromNode(Router::RouteCtx *ctx,
                           << " invalid; re-routing");
     resetRouteCache(ctx);
     ctx->graph.intendedNext    = {-1, -1};
-    ctx->graph.cachedTgtNodeIdx = -1;
+    ctx->graph.cachedTgtNodeIdx  = -1;
+    ctx->graph.cachedTgtZoneIdx  = -1;
     return source;
   }
   int edgeIdx = m_routingGraph.getEdgeFromNodes(srcNode, toNode);
@@ -317,7 +323,8 @@ GridType::Point NavigationGraph::stepFromNode(Router::RouteCtx *ctx,
     LOG_ERROR("NG: NODE " << srcNode << " -> " << toNode << " no edge found; re-routing");
     resetRouteCache(ctx);
     ctx->graph.intendedNext = {-1, -1};
-    ctx->graph.cachedTgtNodeIdx = -1;
+    ctx->graph.cachedTgtNodeIdx  = -1;
+    ctx->graph.cachedTgtZoneIdx  = -1;
     return source;
   }
 
@@ -472,6 +479,34 @@ GridType::Point NavigationGraph::getNextMove(Router::RouteCtx *ctx,
         return target;
       }
     }
+    // Route consumed (direct-nav mode): don't redirect back to the skeleton.
+    // intendedNext from a previous skeleton step may still be adjacent,
+    // making the adjacency check below permanently pass and creating an
+    // oscillation: skeleton → XPND → intendedNext → skeleton → repeat.
+    // When the route is gone and a target is cached the skeleton has done
+    // its job; fall through to direct steering instead.
+    //
+    // Exception: if the agent is far from the world target the route was
+    // consumed prematurely (e.g. physics pushed it after A* finished).
+    // Clear the cache so Phase D re-routes; then fall through to raw XPND
+    // steering which brings the agent back to the skeleton in a few frames.
+    if (ctx->routeNodes.empty() && ctx->graph.cachedTgtNodeIdx >= 0) {
+      const int tdx = std::abs(source.first  - target.first);
+      const int tdy = std::abs(source.second - target.second);
+      if (tdx + tdy <= 4) {
+        ctx->graph.intendedNext = {-1, -1};
+        LOG_DEBUG("NG: XPND direct-nav mode, skip skeleton redirect");
+        return source;
+      }
+      // Far from world target — stale route. Reset so Phase D re-routes.
+      LOG_INFO("NG: XPND direct-nav but far from target (" << (tdx + tdy)
+               << " cells); clearing cache to re-route");
+      ctx->graph.cachedTgtNodeIdx = -1;
+      ctx->graph.cachedTgtZoneIdx = -1;
+      ctx->graph.intendedNext     = {-1, -1};
+      // Fall through: raw XPND pointer steers back to the skeleton.
+    }
+
     const GridType::Point &inxt = ctx->graph.intendedNext;
     if (inxt.first >= 0) {
       const int dx = std::abs(source.first  - inxt.first);
@@ -502,6 +537,11 @@ GridType::Point NavigationGraph::getNextMove(Router::RouteCtx *ctx,
     return source;
   }
 
+  // Cheap zone lookup (level 0 only; -1 if no levels built).
+  const int tgtZoneIdx = (!m_abstractLevels.empty())
+      ? m_abstractLevels[0].zoneGrid[target.second][target.first].closestAbstractNodeIdx
+      : -1;
+
   // Determine if the target lies in/on a dead-end edge (updated every frame,
   // cheap: one unordered_map lookup at most).
   {
@@ -518,15 +558,29 @@ GridType::Point NavigationGraph::getNextMove(Router::RouteCtx *ctx,
   }
 
   // ------------------------------------------------------------------
-  // Phase C: Invalidate stale route when the target node changed
+  // Phase C: Invalidate stale route when the target ZONE changed.
+  //
+  // Using zone rather than node avoids thrashing when a moving target
+  // crosses node boundaries within the same zone — the boundary waypoints
+  // that form the bulk of a distant route are zone-stable.  The agent
+  // self-corrects on the final leg once it arrives in the target zone.
   // ------------------------------------------------------------------
   if (!ctx->routeNodes.empty() &&
       ctx->graph.cachedTgtNodeIdx != tgtNodeIdx) {
-    LOG_INFO("NG: Target changed " << ctx->graph.cachedTgtNodeIdx
-                                   << " -> " << tgtNodeIdx
-                                   << "; clearing route");
-    resetRouteCache(ctx);
-    ctx->graph.intendedNext = {-1, -1};
+    const bool zoneChanged = (tgtZoneIdx < 0
+                              || ctx->graph.cachedTgtZoneIdx < 0
+                              || tgtZoneIdx != ctx->graph.cachedTgtZoneIdx);
+    if (zoneChanged) {
+      LOG_INFO("NG: Target zone changed " << ctx->graph.cachedTgtZoneIdx
+                                         << " -> " << tgtZoneIdx
+                                         << " (node " << ctx->graph.cachedTgtNodeIdx
+                                         << " -> " << tgtNodeIdx << "); clearing route");
+      resetRouteCache(ctx);
+      ctx->graph.intendedNext = {-1, -1};
+    }
+    // Zone unchanged: keep existing route. Boundary waypoints are still
+    // valid; the agent navigates to the old target node (same zone) and
+    // Phase D recomputes same-zone A* once routeNodes is exhausted.
   }
 
   // ------------------------------------------------------------------
@@ -561,7 +615,8 @@ GridType::Point NavigationGraph::getNextMove(Router::RouteCtx *ctx,
         LOG_INFO("NG: Route consumed but far from node " << tgtNodeIdx
                  << " (dist=" << (dx + dy) << "); re-routing");
         resetRouteCache(ctx);
-        ctx->graph.cachedTgtNodeIdx = -1;
+        ctx->graph.cachedTgtNodeIdx  = -1;
+    ctx->graph.cachedTgtZoneIdx  = -1;
       }
       // Resolve source to node/edge for the A* call
       std::optional<int> srcNodeIdx;
@@ -601,7 +656,8 @@ GridType::Point NavigationGraph::getNextMove(Router::RouteCtx *ctx,
                                            << target.second << "; staying");
         return source;
       }
-      ctx->graph.cachedTgtNodeIdx = tgtNodeIdx;
+      ctx->graph.cachedTgtNodeIdx  = tgtNodeIdx;
+      ctx->graph.cachedTgtZoneIdx  = tgtZoneIdx;
     }
   }
 
@@ -618,7 +674,8 @@ GridType::Point NavigationGraph::getNextMove(Router::RouteCtx *ctx,
                             << source.first << "," << source.second
                             << "; forcing escape");
       resetRouteCache(ctx);
-      ctx->graph.cachedTgtNodeIdx = -1;
+      ctx->graph.cachedTgtNodeIdx  = -1;
+    ctx->graph.cachedTgtZoneIdx  = -1;
       ctx->graph.stuckFrames      = 0;
       ctx->graph.intendedNext     = {-1, -1};
 

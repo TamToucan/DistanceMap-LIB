@@ -2,24 +2,41 @@
 
 #include <algorithm>
 #include <queue>
+#include <chrono>
 
 #include "Debug.h"
+#include "RandSimple.h"
 #include "GridToGraph.hpp"
 #include "Router.hpp"
 
 namespace DistanceMap {
 namespace Routing {
 
+  // NOTE: OK to use own RNG here since it's just being used to
+  // pick random edges. Movement dose not need to be deterministic
+  // based on a global seed
+static RNG::RandSimple rng(std::chrono::high_resolution_clock::now()
+                    .time_since_epoch()
+                    .count());
+
 SparseNavGraph::SparseNavGraph() {}
 
 int SparseNavGraph::getEdgeFromNodes(int n1, int n2) const {
   const auto &connections = forwardConnections[n1];
+  std::vector<int> edges;
+  // Find all the edges between n1 and n2 (max ~4 so FOR is fine)
   for (const auto &nodeEdge : connections) {
     if (nodeEdge.first == n2) {
-      return nodeEdge.second;
+      edges.push_back(nodeEdge.second);
     }
   }
-  return -1;
+  switch (edges.size()) {
+    case 0: return -1;
+    case 1: return edges[0];
+    default: {
+      return edges[rng.getInt(0, edges.size() - 1)];
+    }
+  }
 }
 
 int SparseNavGraph::getEdgeFromDead(int deadIdx) const {
@@ -47,6 +64,18 @@ const std::vector<int> &SparseNavGraph::getZoneEdges(int zoneId) const {
              : zoneToEdges[zoneId];
 }
 
+int SparseNavGraph::computeMedianEdgeCost() const {
+  std::vector<int> costs;
+  costs.reserve(edgeCosts.size());
+  for (int c : edgeCosts) {
+    if (c != 0xffff) costs.push_back(c);
+  }
+  if (costs.empty()) return 0;
+  auto mid = costs.begin() + static_cast<ptrdiff_t>(costs.size() / 2);
+  std::nth_element(costs.begin(), mid, costs.end());
+  return *mid;
+}
+
 // Helper for A*
 struct SearchState {
   int node;
@@ -63,7 +92,8 @@ std::vector<int> SparseNavGraph::bidirectionalAStarFlexible(
     std::optional<int> sourceNodeIdx, std::optional<int> sourceEdgeIdx,
     std::optional<int> targetNodeIdx, std::optional<int> targetEdgeIdx,
     const std::unordered_set<int> &allowedEdges,
-    const std::unordered_set<int> &allowedNodes) const {
+    const std::unordered_set<int> &allowedNodes,
+    int costBias, int maxPerturbation) const {
   // Heuristic function
   auto heuristic = [&](int node, bool isForward) {
     if (isForward) {
@@ -207,7 +237,11 @@ std::vector<int> SparseNavGraph::bidirectionalAStarFlexible(
         if (!allowedNodes.empty() && !allowedNodes.count(neighbor))
           continue;
 
-        int newCost = current.cost + edgeCosts[edgeIdx];
+        // Per-agent perturbation: mix costBias with edgeIdx to get a small
+        // (0-15) offset that varies per edge. costBias==0 → perEdge==0 (no change).
+        int perEdge = (costBias == 0) ? 0
+            : static_cast<int>(((static_cast<unsigned>(costBias) ^ static_cast<unsigned>(edgeIdx)) * 2654435761u) % static_cast<unsigned>(maxPerturbation + 1));
+        int newCost = current.cost + edgeCosts[edgeIdx] + perEdge;
         if (newCost < forwardCost[neighbor]) {
           forwardCost[neighbor] = newCost;
           forwardParent[neighbor] = current.node;
@@ -243,7 +277,9 @@ std::vector<int> SparseNavGraph::bidirectionalAStarFlexible(
         if (!allowedNodes.empty() && !allowedNodes.count(neighbor))
           continue;
 
-        int newCost = current.cost + edgeCosts[edgeIdx];
+        int perEdge = (costBias == 0) ? 0
+            : static_cast<int>(((static_cast<unsigned>(costBias) ^ static_cast<unsigned>(edgeIdx)) * 2654435761u) % static_cast<unsigned>(maxPerturbation + 1));
+        int newCost = current.cost + edgeCosts[edgeIdx] + perEdge;
         if (newCost < backwardCost[neighbor]) {
           backwardCost[neighbor] = newCost;
           backwardParent[neighbor] = current.node;
@@ -359,7 +395,7 @@ SparseNavGraph::convertEdgesToNodePath(const std::vector<int> &edgePath,
 std::vector<int> SparseNavGraph::findZoneNodeToNodePath(
     Router::RouteCtx *ctx, const std::vector<int> &zoneBases,
     const std::vector<int> &zoneEdges, int sourceNodeIdx,
-    int targetNodeIdx) const {
+    int targetNodeIdx, int costBias, int maxPerturbation) const {
   if (ctx->lastRouteType == Router::RouteCtx::RouteType::NodeToNode &&
       ctx->routeSrcNodeIdx == sourceNodeIdx &&
       ctx->routeTgtNodeIdx == targetNodeIdx) {
@@ -375,7 +411,7 @@ std::vector<int> SparseNavGraph::findZoneNodeToNodePath(
 
   auto edgePath =
       bidirectionalAStarFlexible(sourceNodeIdx, std::nullopt, targetNodeIdx,
-                                 std::nullopt, allowedEdges, allowedNodes);
+                                 std::nullopt, allowedEdges, allowedNodes, costBias, maxPerturbation);
 
   ctx->routeNodes =
       convertEdgesToNodePath(edgePath, std::nullopt, sourceNodeIdx);
@@ -385,7 +421,7 @@ std::vector<int> SparseNavGraph::findZoneNodeToNodePath(
 std::vector<int> SparseNavGraph::findZoneEdgeToNodePath(
     Router::RouteCtx *ctx, const std::vector<int> &zoneBases,
     const std::vector<int> &zoneEdges, int sourceEdgeIdx,
-    int targetNodeIdx) const {
+    int targetNodeIdx, int costBias, int maxPerturbation) const {
   LOG_DEBUG("FZe2np: bases: "
             << zoneBases.size() << " edges: " << zoneEdges.size()
             << " srcEdge: " << sourceEdgeIdx << " tgtNode: " << targetNodeIdx);
@@ -405,7 +441,7 @@ std::vector<int> SparseNavGraph::findZoneEdgeToNodePath(
 
   auto edgePath =
       bidirectionalAStarFlexible(std::nullopt, sourceEdgeIdx, targetNodeIdx,
-                                 std::nullopt, allowedEdges, allowedNodes);
+                                 std::nullopt, allowedEdges, allowedNodes, costBias, maxPerturbation);
   LOG_DEBUG("FZe2np: AStar conv edges#: " << edgePath.size()
                                           << " to routeNodes");
 
@@ -417,7 +453,8 @@ std::vector<int> SparseNavGraph::findZoneEdgeToNodePath(
 std::vector<int> SparseNavGraph::findRouteWithAllowedSets(
     Router::RouteCtx *ctx, const std::vector<int> &allowedNodes,
     const std::vector<int> &allowedEdges, std::optional<int> sourceNodeIdx,
-    std::optional<int> sourceEdgeIdx, int targetNodeIdx) const {
+    std::optional<int> sourceEdgeIdx, int targetNodeIdx, int costBias,
+    int maxPerturbation) const {
   std::unordered_set<int> allowedNodesSet(allowedNodes.begin(),
                                           allowedNodes.end());
   std::unordered_set<int> allowedEdgesSet(allowedEdges.begin(),
@@ -425,7 +462,8 @@ std::vector<int> SparseNavGraph::findRouteWithAllowedSets(
 
   auto edgePath = bidirectionalAStarFlexible(sourceNodeIdx, sourceEdgeIdx,
                                              targetNodeIdx, std::nullopt,
-                                             allowedEdgesSet, allowedNodesSet);
+                                             allowedEdgesSet, allowedNodesSet,
+                                             costBias, maxPerturbation);
 
   if (sourceNodeIdx.has_value()) {
     return convertEdgesToNodePath(edgePath, std::nullopt, *sourceNodeIdx);
@@ -477,12 +515,111 @@ SparseNavGraph::findZonePathBFS(const std::vector<GridType::ZoneInfo> &zones,
   return {}; // No path found
 }
 
+int SparseNavGraph::findClosestNodeToBoundary(
+    const GridType::Point &boundarySink,
+    const std::vector<int> &candidateNodes) const {
+  int best = -1;
+  int bestDist = std::numeric_limits<int>::max();
+  for (int n : candidateNodes) {
+    int d = std::abs(nodePoints[n].first  - boundarySink.first)
+          + std::abs(nodePoints[n].second - boundarySink.second);
+    if (d < bestDist) {
+      bestDist = d;
+      best = n;
+    }
+  }
+  return best;
+}
+
+std::vector<int> SparseNavGraph::findDistantRouteViaBoundaries(
+    Router::RouteCtx *ctx,
+    const std::vector<GridType::ZoneInfo> &zones,
+    const std::vector<int> &zonePath,
+    std::optional<int> sourceNodeIdx,
+    std::optional<int> sourceEdgeIdx,
+    int targetNodeIdx,
+    int costBias, int maxPerturbation) const {
+
+  // Build waypoint nodes: for each zone-to-zone transition in zonePath, pick a
+  // boundary crossing point and find the nearest base node to it.
+  std::vector<int> waypoints;
+  for (int i = 0; i + 1 < static_cast<int>(zonePath.size()) - 1; ++i) {
+    int zFrom = zonePath[i];
+    int zTo   = zonePath[i + 1];
+    const auto &bcMap = zones[zFrom].zoneBoundaryCellMap;
+    auto it = bcMap.find(zTo);
+    if (it == bcMap.end() || it->second.empty()) {
+      LOG_INFO("FR: BdyWpt: no boundary cells from zone " << zFrom
+               << " to " << zTo << "; aborting");
+      return {};
+    }
+    // Pick a crossing cell biased by costBias so different agents use different
+    // boundary points.  The bias mixes in the transition index for additional variety.
+    const auto &cells = it->second;
+    int pick = static_cast<int>((static_cast<unsigned>(costBias + i) * 2654435761u) >> 26)
+               % static_cast<int>(cells.size());
+    auto cellIt = cells.begin();
+    std::advance(cellIt, pick);
+    int waypointNode = findClosestNodeToBoundary(cellIt->sink,
+                                                 zones[zFrom].baseNodeIdxs);
+    if (waypointNode < 0) {
+      LOG_INFO("FR: BdyWpt: no node near boundary at "
+               << cellIt->sink.first << "," << cellIt->sink.second
+               << "; aborting");
+      return {};
+    }
+    waypoints.push_back(waypointNode);
+  }
+  waypoints.push_back(targetNodeIdx);
+
+  // Chain small A* calls: one per zone pair, restricted to those two zones.
+  std::vector<int> fullRoute;
+  std::optional<int> curNode = sourceNodeIdx;
+  std::optional<int> curEdge = sourceEdgeIdx;
+  for (int i = 0; i < static_cast<int>(waypoints.size()); ++i) {
+    int zFrom = zonePath[i];
+    int zTo   = zonePath[std::min(i + 1, static_cast<int>(zonePath.size()) - 1)];
+    const auto &zoneA = zones[zFrom];
+    const auto &zoneB = zones[zTo];
+
+    std::vector<int> allowedNodes = zoneA.baseNodeIdxs;
+    allowedNodes.insert(allowedNodes.end(),
+                        zoneB.baseNodeIdxs.begin(), zoneB.baseNodeIdxs.end());
+    std::vector<int> allowedEdges = zoneA.baseEdgeIdxs;
+    allowedEdges.insert(allowedEdges.end(),
+                        zoneB.baseEdgeIdxs.begin(), zoneB.baseEdgeIdxs.end());
+
+    int wp = waypoints[i];
+    auto segment = findRouteWithAllowedSets(ctx, allowedNodes, allowedEdges,
+                                            curNode, curEdge, wp, costBias, maxPerturbation);
+    if (segment.empty()) {
+      LOG_INFO("FR: BdyWpt: segment " << i << " (zone " << zFrom << "->"
+               << zTo << " wp=" << wp << ") failed; aborting");
+      return {};
+    }
+
+    if (fullRoute.empty()) {
+      fullRoute = segment;
+    } else {
+      // segment[0] is the junction node shared with the previous segment's tail
+      fullRoute.insert(fullRoute.end(), segment.begin() + 1, segment.end());
+    }
+    // Next segment starts from the waypoint node
+    curNode = wp;
+    curEdge = std::nullopt;
+  }
+
+  LOG_INFO("FR: BdyWpt: route via " << waypoints.size() << " waypoints, "
+           << fullRoute.size() << " nodes");
+  return fullRoute;
+}
+
 std::vector<int> SparseNavGraph::findRoute(
     Router::RouteCtx *ctx, const std::vector<GridType::ZoneInfo> &zones,
     const std::vector<GridType::AbstractEdge> &abstractEdges,
     std::optional<int> sourceNodeIdx, std::optional<int> sourceEdgeIdx,
     int targetNodeIdx, int sourceZoneId, int targetZoneId,
-    int zoneRelationship) const {
+    int zoneRelationship, int costBias, int maxPerturbation) const {
   // Case 1: Same zone
   if (zoneRelationship == -1) {
     LOG_DEBUG("FR: Same srcZone: " << sourceZoneId);
@@ -492,11 +629,11 @@ std::vector<int> SparseNavGraph::findRoute(
     if (sourceNodeIdx.has_value()) {
       LOG_DEBUG("FR:   Find NodeToPath");
       r = findZoneNodeToNodePath(ctx, zone.baseNodeIdxs, zone.baseEdgeIdxs,
-                                 *sourceNodeIdx, targetNodeIdx);
+                                 *sourceNodeIdx, targetNodeIdx, costBias, maxPerturbation);
     } else if (sourceEdgeIdx.has_value()) {
       LOG_DEBUG("FR:   Find EdgeToPath");
       r = findZoneEdgeToNodePath(ctx, zone.baseNodeIdxs, zone.baseEdgeIdxs,
-                                 *sourceEdgeIdx, targetNodeIdx);
+                                 *sourceEdgeIdx, targetNodeIdx, costBias, maxPerturbation);
     } else {
       LOG_INFO("FR: Same zone but no source node or edge — unresolvable source");
       return {};
@@ -525,7 +662,7 @@ std::vector<int> SparseNavGraph::findRoute(
               << allowedNodes.size() << " edges: " << allowedEdges.size());
     auto r = findRouteWithAllowedSets(ctx, allowedNodes, allowedEdges,
                                       sourceNodeIdx, sourceEdgeIdx,
-                                      targetNodeIdx);
+                                      targetNodeIdx, costBias, maxPerturbation);
     if (!r.empty())
       return r;
     LOG_INFO("FR: Adjacent-zone routing failed; falling back to full-graph A*");
@@ -537,6 +674,14 @@ std::vector<int> SparseNavGraph::findRoute(
         findZonePathBFS(zones, sourceZoneId, targetZoneId);
 
     if (!zonePath.empty()) {
+      // Try boundary-waypoint routing first: small per-zone-pair A* calls.
+      auto r = findDistantRouteViaBoundaries(ctx, zones, zonePath,
+                                             sourceNodeIdx, sourceEdgeIdx,
+                                             targetNodeIdx, costBias, maxPerturbation);
+      if (!r.empty())
+        return r;
+      LOG_INFO("FR: Boundary-waypoint routing failed; trying combined-zone A*");
+
       // Combine all zones along the path
       std::vector<int> allowedNodes, allowedEdges;
       LOG_DEBUG("FR: Make sets for " << zonePath.size() << " zones");
@@ -557,13 +702,12 @@ std::vector<int> SparseNavGraph::findRoute(
       }
       LOG_DEBUG("FR:   Made sets. nodes:" << allowedNodes.size()
                                           << " edges: " << allowedEdges.size());
-      auto r = findRouteWithAllowedSets(ctx, allowedNodes, allowedEdges,
-                                        sourceNodeIdx, sourceEdgeIdx,
-                                        targetNodeIdx);
-      if (!r.empty())
-        return r;
-      LOG_INFO(
-          "FR: Distant-zone routing failed; falling back to full-graph A*");
+      auto r2 = findRouteWithAllowedSets(ctx, allowedNodes, allowedEdges,
+                                         sourceNodeIdx, sourceEdgeIdx,
+                                         targetNodeIdx, costBias, maxPerturbation);
+      if (!r2.empty())
+        return r2;
+      LOG_INFO("FR: Combined-zone A* failed; falling back to full-graph A*");
     } else {
       LOG_INFO("FR: Zone BFS found no path; falling back to full-graph A*");
     }
@@ -579,7 +723,7 @@ std::vector<int> SparseNavGraph::findRoute(
                                     << " tgt=" << targetNodeIdx);
   auto edgePath =
       bidirectionalAStarFlexible(sourceNodeIdx, sourceEdgeIdx, targetNodeIdx,
-                                 std::nullopt, {}, {});
+                                 std::nullopt, {}, {}, costBias, maxPerturbation);
   if (sourceNodeIdx.has_value())
     return convertEdgesToNodePath(edgePath, std::nullopt, *sourceNodeIdx);
   if (sourceEdgeIdx.has_value())

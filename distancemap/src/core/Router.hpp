@@ -139,6 +139,9 @@ struct RouteCtx {
     GridType::Point intendedNext  = {-1, -1}; // skeleton cell set by stepFromEdge; used by
                                               // XPND fast-path to persist through off-skeleton
                                               // traversal of diagonal skeleton steps
+    int agentCostBias        = 0;  // per-agent A* edge cost perturbation; 0 = no perturbation
+    int agentMaxPerturbation = 15; // per-agent A* perturbation cap; 15 = backward-compat default
+    int cachedTgtZoneIdx = -1; // zone of the target when route was last computed
   };
   GraphState graph;
 

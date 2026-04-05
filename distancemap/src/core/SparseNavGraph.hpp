@@ -71,23 +71,31 @@ public:
   const std::vector<int> &getZoneNodes(int zoneId) const;
   const std::vector<int> &getZoneEdges(int zoneId) const;
 
+  // Returns the median cost of all non-dead-end edges (path length in tiles).
+  // Returns 0 if edgeCosts is empty or all edges are dead-ends.
+  int computeMedianEdgeCost() const;
+
   // Routing methods
   std::vector<int>
   findRoute(Router::RouteCtx *ctx, const std::vector<GridType::ZoneInfo> &zones,
             const std::vector<GridType::AbstractEdge> &abstractEdges,
             std::optional<int> sourceNodeIdx, std::optional<int> sourceEdgeIdx,
             int targetNodeIdx,
-            int sourceZoneId, // Precomputed source zone
-            int targetZoneId, // Precomputed target zone
-            int zoneRelationship)
-      const; // -1 = same zone, >=0 = adjacent zone index, -2 = distant
+            int sourceZoneId,     // Precomputed source zone
+            int targetZoneId,     // Precomputed target zone
+            int zoneRelationship, // -1 = same zone, >=0 = adjacent zone index, -2 = distant
+            int costBias = 0,
+            int maxPerturbation = 15)
+      const;
 
 private:
   std::vector<int> bidirectionalAStarFlexible(
       std::optional<int> sourceNodeIdx, std::optional<int> sourceEdgeIdx,
       std::optional<int> targetNodeIdx, std::optional<int> targetEdgeIdx,
       const std::unordered_set<int> &allowedEdges,
-      const std::unordered_set<int> &allowedNodes) const;
+      const std::unordered_set<int> &allowedNodes,
+      int costBias = 0,
+      int maxPerturbation = 15) const;
 
   std::vector<int>
   convertEdgesToNodePath(const std::vector<int> &edgePath,
@@ -98,18 +106,40 @@ private:
                                           const std::vector<int> &zoneBases,
                                           const std::vector<int> &zoneEdges,
                                           int sourceNodeIdx,
-                                          int targetNodeIdx) const;
+                                          int targetNodeIdx,
+                                          int costBias = 0,
+                                          int maxPerturbation = 15) const;
 
   std::vector<int> findZoneEdgeToNodePath(Router::RouteCtx *ctx,
                                           const std::vector<int> &zoneBases,
                                           const std::vector<int> &zoneEdges,
                                           int sourceEdgeIdx,
-                                          int targetNodeIdx) const;
+                                          int targetNodeIdx,
+                                          int costBias = 0,
+                                          int maxPerturbation = 15) const;
 
   std::vector<int> findRouteWithAllowedSets(
       Router::RouteCtx *ctx, const std::vector<int> &allowedNodes,
       const std::vector<int> &allowedEdges, std::optional<int> sourceNodeIdx,
-      std::optional<int> sourceEdgeIdx, int targetNodeIdx) const;
+      std::optional<int> sourceEdgeIdx, int targetNodeIdx,
+      int costBias = 0,
+      int maxPerturbation = 15) const;
+
+  // Returns the node in candidateNodes closest (Manhattan) to boundarySink.
+  int findClosestNodeToBoundary(
+      const GridType::Point &boundarySink,
+      const std::vector<int> &candidateNodes) const;
+
+  // Routes src→tgt via zone-boundary waypoints using small per-zone A* calls.
+  std::vector<int> findDistantRouteViaBoundaries(
+      Router::RouteCtx *ctx,
+      const std::vector<GridType::ZoneInfo> &zones,
+      const std::vector<int> &zonePath,
+      std::optional<int> sourceNodeIdx,
+      std::optional<int> sourceEdgeIdx,
+      int targetNodeIdx,
+      int costBias,
+      int maxPerturbation = 15) const;
 
   static std::vector<int>
   findZonePathBFS(const std::vector<GridType::ZoneInfo> &zones,
