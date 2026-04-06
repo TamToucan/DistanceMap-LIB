@@ -142,6 +142,7 @@ struct RouteCtx {
     int agentCostBias        = 0;  // per-agent A* edge cost perturbation; 0 = no perturbation
     int agentMaxPerturbation = 15; // per-agent A* perturbation cap; 15 = backward-compat default
     int cachedTgtZoneIdx = -1; // zone of the target when route was last computed
+    int nonSkeletonFrames = 0; // consecutive frames NOT on EDGE/NODE/DEND; triggers forced re-route
   };
   GraphState graph;
 

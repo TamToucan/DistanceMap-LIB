@@ -14,6 +14,12 @@ namespace Routing {
 // Frames at the same grid cell before the route is discarded and retried.
 static constexpr int STUCK_THRESHOLD = 60;
 
+// Consecutive frames off the skeleton (XPND/WALL/unknown — never touching
+// EDGE/NODE/DEND) before Phase A is bypassed and a full re-route is forced.
+// This catches oscillation between off-skeleton cells that STUCK_THRESHOLD
+// misses because Phase A returns early (before Phase E can run).
+static constexpr int NON_SKELETON_STUCK_THRESHOLD = 90;
+
 // Clears the route plan AND the A* route-cache fields inside RouteCtx so that
 // the next ensureRoute call actually re-runs A* instead of hitting SAME ROUTE.
 static void resetRouteCache(Router::RouteCtx *ctx) {
@@ -381,14 +387,21 @@ GridType::Point NavigationGraph::stepFromEdge(Router::RouteCtx *ctx,
     } else if (edge.from == ctx->routeNodes[0]) {
       goForward = false;
     } else {
-      // Neither reachable endpoint is our next waypoint — route is stale
+      // Neither endpoint of this edge matches the next route waypoint — the
+      // agent was physically displaced (e.g. by separation forces) onto an
+      // adjacent off-route edge. The planned route is still valid for the
+      // target; throwing it away forces a needless A* recompute and, worse,
+      // triggers the same situation again next frame.
+      // Instead: keep the route, clear intendedNext (so the XPND fast-path
+      // doesn't redirect back to the wrong skeleton cell), and step toward the
+      // nearer endpoint. Once back on a node, stepFromNode will resume the
+      // existing route correctly.
       LOG_INFO("NG: EDGE " << edgeIdx << " (" << edge.from << "->"
                            << edge.to << (edge.toDeadEnd ? "(DEND)" : "")
-                           << ") neither endpoint matches routeNodes[0]="
-                           << ctx->routeNodes[0] << "; clearing route");
-      resetRouteCache(ctx);
+                           << ") off-route (want " << ctx->routeNodes[0]
+                           << "); stepping to nearer end, keeping route");
       ctx->graph.intendedNext = {-1, -1};
-      // Step toward the nearer end as a safe default
+      // Step toward whichever endpoint is nearer
       goForward = (idx > static_cast<int>(edge.path.size()) / 2);
     }
   } else if (edgeIdx == ctx->graph.tgtDeadEndEdgeIdx) {
@@ -456,6 +469,34 @@ GridType::Point NavigationGraph::getNextMove(Router::RouteCtx *ctx,
   const int srcCell = m_infoGrid[source.second][source.first];
 
   // ------------------------------------------------------------------
+  // Pre-Phase: Non-skeleton accumulator
+  // Counts frames the agent spends on off-skeleton cells (XPND, WALL,
+  // BOUNDARY, unknown) without ever touching an EDGE/NODE/DEND cell.
+  // When the threshold is exceeded the agent is genuinely lost in a bad
+  // XPND region — Phase A is bypassed so Phase D can force a fresh A*
+  // and Phase F's fallback scan can steer the agent back to the skeleton.
+  // ------------------------------------------------------------------
+  const bool onSkeleton = srcCell & (GridType::NODE | GridType::EDGE | GridType::DEND);
+  if (onSkeleton) {
+    ctx->graph.nonSkeletonFrames = 0;
+  } else {
+    ctx->graph.nonSkeletonFrames++;
+  }
+  const bool xpndStuck = ctx->graph.nonSkeletonFrames >= NON_SKELETON_STUCK_THRESHOLD;
+  if (xpndStuck) {
+    LOG_INFO("NG: Non-skeleton stuck (" << ctx->graph.nonSkeletonFrames
+             << " frames) at " << source.first << "," << source.second
+             << "; bypassing Phase A for re-route");
+    ctx->graph.nonSkeletonFrames = 0;
+    ctx->graph.intendedNext      = {-1, -1};
+    resetRouteCache(ctx);
+    ctx->graph.cachedTgtNodeIdx  = -1;
+    ctx->graph.cachedTgtZoneIdx  = -1;
+    // Fall through — Phase B-F will re-route and Phase F's fallback scan
+    // will steer the agent toward the nearest skeleton cell.
+  }
+
+  // ------------------------------------------------------------------
   // Phase A: XPND fast-path
   // Off-skeleton cells store a direction pointer toward the nearest edge.
   // Normally we follow it immediately. BUT: skeleton edges can have diagonal
@@ -466,7 +507,7 @@ GridType::Point NavigationGraph::getNextMove(Router::RouteCtx *ctx,
   // Fix: stepFromEdge records its chosen next skeleton cell as intendedNext.
   // While on XPND and that cell is still adjacent, continue toward it instead.
   // ------------------------------------------------------------------
-  if (srcCell & GridType::XPND) {
+  if (!xpndStuck && (srcCell & GridType::XPND)) {
     // If the agent is at or adjacent to the world target, navigate directly
     // rather than letting XPND redirect it back to the skeleton. This stops
     // oscillation when the world target itself lies in an XPND zone.
@@ -507,17 +548,25 @@ GridType::Point NavigationGraph::getNextMove(Router::RouteCtx *ctx,
       // Fall through: raw XPND pointer steers back to the skeleton.
     }
 
-    const GridType::Point &inxt = ctx->graph.intendedNext;
-    if (inxt.first >= 0) {
+    if (ctx->graph.intendedNext.first >= 0) {
+      const GridType::Point inxt = ctx->graph.intendedNext; // copy so we can clear
       const int dx = std::abs(source.first  - inxt.first);
       const int dy = std::abs(source.second - inxt.second);
-      if (dx <= 1 && dy <= 1) {
+      if (dx == 0 && dy == 0) {
+        // Agent has arrived at intendedNext — consume it and fall through to
+        // raw XPND so the cell's own pointer steers further into the skeleton.
+        // Without this, returning inxt == source causes a "same-cell" result
+        // which triggers direct-angle movement back into the wall every frame.
+        ctx->graph.intendedNext = {-1, -1};
+        LOG_DEBUG("NG: XPND intendedNext arrived, consuming");
+      } else if (dx <= 1 && dy <= 1) {
         LOG_DEBUG("NG: XPND override intendedNext -> " << inxt.first << "," << inxt.second);
         return inxt;
+      } else {
+        // Too far from intended target — stale, fall through to raw XPND
+        ctx->graph.intendedNext = {-1, -1};
+        LOG_DEBUG("NG: XPND intendedNext stale, clearing");
       }
-      // Too far from intended target — stale, fall through to raw XPND
-      ctx->graph.intendedNext = {-1, -1};
-      LOG_DEBUG("NG: XPND intendedNext stale, clearing");
     }
     int dirIdx = GridType::get_XPND_DIR(srcCell);
     GridType::Point dir = GridType::directions8[dirIdx];
@@ -633,18 +682,27 @@ GridType::Point NavigationGraph::getNextMove(Router::RouteCtx *ctx,
           srcEdgeIdx = srcInfo.edgeOrDeadEndIdx;
         } else {
           // getClosestNode could not resolve source to any graph element.
-          // This means srcCell is not NODE/EDGE/DEND/XPND, or the XPND chain
-          // led to an unclassified cell. Log the raw cell so the root cause
-          // can be identified.
+          // This happens when physics pushes the agent into a WALL|BOUNDARY cell
+          // (not NODE/EDGE/DEND/XPND). Calling A* with null src/edge always fails,
+          // so skip it and step toward the nearest skeleton cell immediately.
           LOG_INFO("NG: Phase D: unresolvable source " << source.first << ","
                    << source.second << " srcCell=0x" << std::hex << srcCell
-                   << " GCN closestPt=" << srcInfo.closestGraphPoint.first
-                   << "," << srcInfo.closestGraphPoint.second
-                   << " cell=0x"
-                   << m_infoGrid[srcInfo.closestGraphPoint.second][srcInfo.closestGraphPoint.first]
-                   << std::dec
-                   << " isEdge=" << srcInfo.isEdge
-                   << " eoDE=" << srcInfo.edgeOrDeadEndIdx);
+                   << std::dec << "; escaping to nearest skeleton cell");
+          const int rows = static_cast<int>(m_infoGrid.size());
+          const int cols = (rows > 0) ? static_cast<int>(m_infoGrid[0].size()) : 0;
+          for (const auto &d : GridType::directions8) {
+            const int nx = source.first  + d.first;
+            const int ny = source.second + d.second;
+            if (nx >= 0 && ny >= 0 && ny < rows && nx < cols) {
+              const int nc = m_infoGrid[ny][nx];
+              if (nc & (GridType::NODE | GridType::EDGE |
+                        GridType::XPND | GridType::DEND)) {
+                ctx->graph.intendedNext = {nx, ny};
+                return {nx, ny};
+              }
+            }
+          }
+          return source; // no navigable neighbour found
         }
       }
 
