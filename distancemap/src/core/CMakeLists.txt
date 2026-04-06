@@ -35,9 +35,15 @@ add_library(${DMAP_LIB_NAME} STATIC ${DMAP_SOURCES})
 # target_compile_definitions(${DMAP_LIB_NAME} PRIVATE DISTANCEMAP_EXPORTS)
 
 # Include Directories
+# Use get_filename_component to resolve the Random path to an absolute path so
+# that IDE parsers (clangd) can find headers without needing to normalise ../../../../
+get_filename_component(LIBS_RANDOM_DIR
+    "${CMAKE_CURRENT_SOURCE_DIR}/../../../../Libs/lib/Random" ABSOLUTE)
+
 target_include_directories(${DMAP_LIB_NAME} PUBLIC
     "${CMAKE_CURRENT_SOURCE_DIR}"    # . (src/core)
     "${CMAKE_CURRENT_SOURCE_DIR}/.." # .. (src)
+    "${LIBS_RANDOM_DIR}"             # Resolved path so IDE parsers work
 )
 
 # Properties
