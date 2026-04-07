@@ -3,6 +3,7 @@
 #include "DistanceMapDLL.hpp"
 #include "GridTypes.hpp"
 #include "Router.hpp"
+#include <limits>
 
 namespace DistanceMap {
 namespace GridToGraph {
@@ -20,8 +21,20 @@ class DISTANCEMAP_API NavigationAPI {
 public:
   virtual ~NavigationAPI() = default;
 
+  /// Sentinel return value: caller must not apply any movement this frame.
+  static constexpr float NO_MOVE = std::numeric_limits<float>::infinity();
+
   virtual float getMoveDirection(Router::RouteCtx *ctx, GridType::Vec2 from,
                                  GridType::Vec2 to, int type, float dt) = 0;
+
+  /// Called by NavSystem when ctx->isStuck is true.
+  /// Returns a recovery angle (degrees) or NO_MOVE to suppress movement.
+  /// Navigator is responsible for clearing ctx->isStuck when done.
+  virtual float stuck(Router::RouteCtx *ctx, GridType::Vec2 from,
+                      GridType::Vec2 to, int type, float dt) {
+    ctx->isStuck = false;
+    return NO_MOVE;
+  }
 
   // Calculates new position with wall sliding
   virtual GridType::Vec2 resolveMove(const GridType::Vec2 &currentPos,

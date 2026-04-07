@@ -11,6 +11,16 @@ namespace Router {
 struct RouteCtx {
   int type = -1;
   float curDir = -1.0f; // -1 = no valid direction yet (sentinel for hysteresis guards)
+
+  // General stuck detection — updated by NavSystem, cleared by navigator in stuck()
+  float stuckSampleTimer  = 0.0f;  // countdown to next sample
+  float stuckSampleDistSq = -1.0f; // world dist² to target at last sample (-1 = uninit)
+  bool  isStuck           = false;
+
+  // World-space waypoint commitment — set by NavSystem after each navigator call.
+  // NavSystem steers toward this position without re-calling the navigator until arrival.
+  // Sentinel {-1.0f, -1.0f} means no active commitment.
+  GridType::Vec2 committedTarget = {-1.0f, -1.0f};
   GridType::Point from;
   GridType::Point to;
   GridType::Point next;
@@ -143,6 +153,7 @@ struct RouteCtx {
     int agentMaxPerturbation = 15; // per-agent A* perturbation cap; 15 = backward-compat default
     int cachedTgtZoneIdx = -1; // zone of the target when route was last computed
     int nonSkeletonFrames = 0; // consecutive frames NOT on EDGE/NODE/DEND; triggers forced re-route
+    int stuckRecoveryFrames = 0; // frame counter used by NavigationGraph::stuck() recovery sequence
   };
   GraphState graph;
 

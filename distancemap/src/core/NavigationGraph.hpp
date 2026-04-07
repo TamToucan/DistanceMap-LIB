@@ -36,6 +36,9 @@ public:
   float getMoveDirection(Router::RouteCtx *ctx, GridType::Vec2 from,
                          GridType::Vec2 to, int type, float dt) override;
 
+  float stuck(Router::RouteCtx *ctx, GridType::Vec2 from,
+              GridType::Vec2 to, int type, float dt) override;
+
   const std::vector<GridToGraph::AbstractLevel> *
   getAbstractLevels() const override;
 

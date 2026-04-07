@@ -849,5 +849,40 @@ float NavigationGraph::getMoveDirection(Router::RouteCtx *ctx,
   return ctx->curDir;
 }
 
+float NavigationGraph::stuck(Router::RouteCtx *ctx, GridType::Vec2 from,
+                             GridType::Vec2 to, int type, float dt) {
+  if (ctx->graph.stuckRecoveryFrames == 0) {
+    // First frame of recovery: clear stale navigation state
+    ctx->graph.intendedNext      = {-1, -1};
+    ctx->graph.nonSkeletonFrames = 0;
+    resetRouteCache(ctx);
+    ctx->graph.cachedTgtNodeIdx = -1;
+    ctx->graph.cachedTgtZoneIdx = -1;
+    LOG_INFO("NG: stuck() recovery started at "
+             << from.x << "," << from.y);
+  }
+
+  ctx->graph.stuckRecoveryFrames++;
+
+  // Phase 1 (frames 1-30): settle — suppress movement so knockback/separation dissipates
+  if (ctx->graph.stuckRecoveryFrames <= 30) {
+    return NavigationAPI::NO_MOVE;
+  }
+
+  // Phase 2 (frames 31-60): steer directly toward target, bypassing graph
+  if (ctx->graph.stuckRecoveryFrames <= 60) {
+    float dx = to.x - from.x;
+    float dy = to.y - from.y;
+    float angle = std::atan2(dy, dx) * 180.0f / 3.14159265f;
+    if (angle < 0.0f) angle += 360.0f;
+    return angle;
+  }
+
+  // Recovery complete
+  ctx->graph.stuckRecoveryFrames = 0;
+  ctx->isStuck = false;
+  return NavigationAPI::NO_MOVE;
+}
+
 } // namespace Routing
 } // namespace DistanceMap
