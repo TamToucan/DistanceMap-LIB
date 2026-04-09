@@ -1605,6 +1605,24 @@ generateAbstractZones(ZoneGrid &zoneGrid, const Grid &grid,
       }
     }
   }
+
+  // Sloped edge cells are tagged WALL|BOUNDARY but are physically occupiable.
+  // The BFS skips all WALL cells, leaving them with closestAbstractNodeIdx=-1.
+  // Copy GridPointInfo from the adjacent walkable cell (indicated by the low
+  // 3 bits of the BOUNDARY cell) so zone-level routing works when the agent
+  // stands against a slope.
+  for (int r = 1; r < rows - 1; ++r) {
+    for (int c = 1; c < cols - 1; ++c) {
+      int cell = grid[r][c];
+      if ((cell & WALL) && (cell & BOUNDARY)) {
+        int dirIdx = cell & DIR_MASK;
+        int wc = c + directions8[dirIdx].first;
+        int wr = r + directions8[dirIdx].second;
+        zoneGrid[r][c] = zoneGrid[wr][wc];
+      }
+    }
+  }
+
   std::vector<ZoneInfo> zones(abstractNodes.size());
 
   // If this edge crosses zones update the zone infos

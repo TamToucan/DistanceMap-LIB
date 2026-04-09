@@ -413,6 +413,13 @@ std::vector<int> SparseNavGraph::findZoneNodeToNodePath(
       bidirectionalAStarFlexible(sourceNodeIdx, std::nullopt, targetNodeIdx,
                                  std::nullopt, allowedEdges, allowedNodes, costBias, maxPerturbation);
 
+  if (edgePath.empty()) {
+    ctx->routeNodes = (sourceNodeIdx == targetNodeIdx)
+                          ? std::vector<int>{sourceNodeIdx}
+                          : std::vector<int>{};
+    return ctx->routeNodes;
+  }
+
   ctx->routeNodes =
       convertEdgesToNodePath(edgePath, std::nullopt, sourceNodeIdx);
   return ctx->routeNodes;
@@ -444,6 +451,17 @@ std::vector<int> SparseNavGraph::findZoneEdgeToNodePath(
                                  std::nullopt, allowedEdges, allowedNodes, costBias, maxPerturbation);
   LOG_DEBUG("FZe2np: AStar conv edges#: " << edgePath.size()
                                           << " to routeNodes");
+
+  if (edgePath.empty()) {
+    const auto &[srcFrom, srcTo] = edgeFromTos[sourceEdgeIdx];
+    if (srcTo == targetNodeIdx)
+      ctx->routeNodes = {srcFrom, srcTo};
+    else if (srcFrom == targetNodeIdx)
+      ctx->routeNodes = {srcTo, srcFrom};
+    else
+      ctx->routeNodes = {};
+    return ctx->routeNodes;
+  }
 
   ctx->routeNodes =
       convertEdgesToNodePath(edgePath, sourceEdgeIdx, std::nullopt);

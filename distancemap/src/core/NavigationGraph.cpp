@@ -81,11 +81,24 @@ NavigationGraph::getAbstractLevels() const {
 
 NavigationGraph::ClosestNodeInfo
 NavigationGraph::getClosestNode(const GridType::Point &pos) const {
-  int cell = m_infoGrid[pos.second][pos.first];
+  GridType::Point workPos = pos;
+  int cell = m_infoGrid[workPos.second][workPos.first];
+
+  // Sloped edges can leave the agent on a WALL|BOUNDARY cell.  The BOUNDARY
+  // direction (low 3 bits) points one step toward the adjacent walkable cell,
+  // so follow it before attempting any graph resolution.
+  if ((cell & GridType::WALL) && (cell & GridType::BOUNDARY)) {
+    int dirIdx = cell & GridType::DIR_MASK;
+    workPos.first  += GridType::directions8[dirIdx].first;
+    workPos.second += GridType::directions8[dirIdx].second;
+    cell = m_infoGrid[workPos.second][workPos.first];
+    LOG_DEBUG("GCN: BOUNDARY|WALL at " << pos.first << "," << pos.second
+      << " stepped to " << workPos.first << "," << workPos.second);
+  }
 
   // Already on a node
   if (cell & GridType::NODE) {
-    return {cell & 0xffff, -1, false, pos};
+    return {cell & 0xffff, -1, false, workPos};
   }
 
   // Already on an edge
@@ -93,11 +106,11 @@ NavigationGraph::getClosestNode(const GridType::Point &pos) const {
     int eIdx = cell & GridType::EDGE_MASK;
     const auto &ft = m_routingGraph.edgeFromTos[eIdx];
     bool secondHalf = (cell & GridType::EDGE_HALF) && (ft.second >= 0);
-    return {secondHalf ? ft.second : ft.first, eIdx, true, pos};
+    return {secondHalf ? ft.second : ft.first, eIdx, true, workPos};
   }
 
   // Follow XPND pointers until we land on an edge or node
-  GridType::Point edgePnt = pos;
+  GridType::Point edgePnt = workPos;
   while (cell & GridType::XPND) {
     int dst = GridType::get_XPND_DIST(cell);
     int dir = GridType::get_XPND_DIR(cell);
