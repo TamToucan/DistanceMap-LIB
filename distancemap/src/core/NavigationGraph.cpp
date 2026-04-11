@@ -877,13 +877,16 @@ float NavigationGraph::stuck(Router::RouteCtx *ctx, GridType::Vec2 from,
 
   ctx->graph.stuckRecoveryFrames++;
 
-  // Phase 1 (frames 1-30): settle — suppress movement so knockback/separation dissipates
-  if (ctx->graph.stuckRecoveryFrames <= 30) {
+  // Phase 1: settle — suppress movement so knockback/separation dissipates.
+  // Duration is staggered per agent (30–59 frames) using agentCostBias so that
+  // two head-on agents resume at different times and one clears the cell first.
+  const int phase1End = 30 + (ctx->graph.agentCostBias % 30);
+  if (ctx->graph.stuckRecoveryFrames <= phase1End) {
     return NavigationAPI::NO_MOVE;
   }
 
-  // Phase 2 (frames 31-60): steer directly toward target, bypassing graph
-  if (ctx->graph.stuckRecoveryFrames <= 60) {
+  // Phase 2 (30 frames): steer directly toward target, bypassing graph
+  if (ctx->graph.stuckRecoveryFrames <= phase1End + 30) {
     float dx = to.x - from.x;
     float dy = to.y - from.y;
     float angle = std::atan2(dy, dx) * 180.0f / 3.14159265f;

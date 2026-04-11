@@ -457,7 +457,8 @@ std::vector<int> SparseNavGraph::findZoneEdgeToNodePath(
     if (srcTo == targetNodeIdx)
       ctx->routeNodes = {srcFrom, srcTo};
     else if (srcFrom == targetNodeIdx)
-      ctx->routeNodes = {srcTo, srcFrom};
+      ctx->routeNodes = (srcTo != -1) ? std::vector<int>{srcTo, srcFrom}
+                                      : std::vector<int>{srcFrom};
     else
       ctx->routeNodes = {};
     return ctx->routeNodes;

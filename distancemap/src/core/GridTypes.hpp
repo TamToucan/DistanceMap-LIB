@@ -53,30 +53,6 @@ struct Vec2 {
 };
 
 // Directions for 8 neighbouring cells
-#if 0
-const static std::vector<GridType::Point> directions8 = {
-	{0, -1},  {0, 1},  {-1, 0}, {1, 0}, // 0 Up, 1 Down, 2 Left, 3 Right
-	{-1, -1}, {1, -1}, {1, 1},  {-1, 1} // 4 LU, 5 RU, 6 RD, 7 LD
-};
-
-    // Reverses directions8 index to the opposite dir
-const static std::vector<int> reverseDirIndex = { 1, 0, 3, 2, 6, 7, 4, 5 };
-
-	// When going left->right, top->bottom, we only check 4 directions
-    // Directions: RIGHT, BOTTOM, BOTTOM_RIGHT, BOTTOM_LEFT
-const static std::vector<std::pair<int, int>> searchDirs4 = {
-	{1, 0},   // Right
-	{0, 1},   // Bottom
-	{1, 1},   // Bottom-right
-	{-1, 1},  // Bottom-left
-};
-const static std::vector<int> dir4todir8Index = {
-	3, // Right => Right
-	1, // Bottom => Down
-	6, // Bottom-right => Down-Right
-	7, // Bottom-left => Down-Left
-};
-#else
 const static std::vector<GridType::Point> directions8 = {
     {1, 0},   // 0 Right
     {1, 1},   // 1 RD
@@ -105,7 +81,6 @@ const static std::vector<int> dir4todir8Index = {
     1, // Bottom-right => Down-Right
     3, // Bottom-left => Down-Left
 };
-#endif
 
 struct Edge {
   int from, to;        // Indices of connected nodes or deadEnds
@@ -141,6 +116,7 @@ struct BaseGraphInfo {
 //            |-----baseEdge-----|
 // Graph of Base nodes -> Base Node and EdgeIdx and Cost
 // The from->to and to->from is stored for each baseEdge
+// It excludes dead ends
 using BaseGraph = std::vector<std::vector<BaseGraphInfo>>;
 
 struct GridPointInfo {
