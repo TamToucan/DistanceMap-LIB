@@ -1,18 +1,12 @@
-#include <memory>
+#pragma once
+
 #include <vector>
 
 #include "DistanceMapDLL.hpp"
 #include "GridToGraph.hpp"
-#include "GridTypes.hpp"
-#include "NavigationAPI.hpp"
-#include "Router.hpp"
 #include "WallDistanceGrid.hpp"
 
 namespace DistanceMap {
-
-enum NavigatorType {
-  GRAPH,
-};
 
 class DISTANCEMAP_API DistanceMapCore {
 public:
@@ -20,21 +14,11 @@ public:
   ~DistanceMapCore() = default;
 
   // Grid is 0 = empty, 1 = solid
-  void initialize(const std::vector<std::vector<int>> &grid,
-                  const Router::Info &info);
+  void initialize(const std::vector<std::vector<int>> &grid);
 
   const GridToGraph::Graph &getGraph() const { return m_graph; }
 
-  std::unique_ptr<NavigationAPI> makeNavigator(NavigatorType type);
-
-  float getMoveAngle(const std::unique_ptr<NavigationAPI> &pNavigator,
-                     Router::RouteCtx *ctx, GridType::Vec2 from,
-                     GridType::Vec2 to, int type, float dt);
-  GridType::Vec2 getMovePos(const std::unique_ptr<NavigationAPI> &pNavigator,
-                            GridType::Vec2 from, float ang, float distance);
-
 private:
-  Router::Info m_info;
   GridToGraph::Graph m_graph;
   GridType::Grid wallDistGrid;
   DistanceMap::SightGrid sightGrid;

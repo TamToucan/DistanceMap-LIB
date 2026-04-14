@@ -97,8 +97,8 @@ void GDDistanceMap::make_it(TileMapLayer* pTileMap, int layer) {
     }
   }
 
-  core.initialize(grid, info);
-  mpNavigator = core.makeNavigator(NavigatorType::GRAPH);
+  core.initialize(grid);
+  // mpNavigator removed: NavigationGraph moved to CuteLott repo
 }
 
 // ===========================================================================
@@ -135,5 +135,6 @@ float GDDistanceMap::getMoveAngle(godot::Node* id, godot::Vector2 from,
   GridType::Vec2 fromV(from.x, from.y);
   GridType::Vec2 toV(to.x, to.y);
 
-  return core.getMoveAngle(mpNavigator, ctx, fromV, toV, type);
+  // mpNavigator removed: NavigationGraph moved to CuteLott repo
+  return 0.0f;
 }

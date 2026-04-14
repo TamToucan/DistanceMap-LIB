@@ -46,14 +46,16 @@ int main(int argc, char **argv) {
   auto graph = GridToGraph::makeGraph(floorGrid);
   */
   auto pathGrid(grid);
-  DistanceMap::Router::Info info;
-  info.mCaveHeight = 32;
-  info.mCellWidth = 8;
-  info.mCellHeight = 8;
+  // Router::Info removed from initialize(); NavigationGraph moved to CuteLott repo
+  // DistanceMap::Router::Info info;
+  // info.mCaveHeight = 32;
+  // info.mCellWidth = 8;
+  // info.mCellHeight = 8;
 
   DistanceMap::DistanceMapCore core;
-  core.initialize(grid, info);
+  core.initialize(grid);
 
+#if 0 // pNavigator block disabled: NavigationGraph moved to CuteLott repo
   auto pNavigator = core.makeNavigator(DistanceMap::NavigatorType::GRAPH);
 
   DistanceMap::GridType::Vec2 from(300, 250);
@@ -127,5 +129,6 @@ int main(int argc, char **argv) {
     std::cerr << "ERROR: NO PATH" << std::endl;
   }
 
-  return reached_target ? 0 : 1;
+#endif // pNavigator block
+  return 0;
 }

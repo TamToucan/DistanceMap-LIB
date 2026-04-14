@@ -4,13 +4,11 @@
 #include <godot_cpp/classes/object.hpp>
 #include <godot_cpp/classes/tile_map_layer.hpp>
 #include <map>
-#include <memory>
 
 #include "Debug.h"
 #include "DistanceMapCore.hpp"
 #include "GDDistanceMapDLL.hpp"
 #include "GDTracker.hpp"
-#include "NavigationAPI.hpp"
 #include "Router.hpp"
 
 namespace godot {
@@ -49,7 +47,8 @@ class GDDISTANCE_MAP_API GDDistanceMap : public RefCounted {
  private:
   godot::Vector2i getMapPos(int x, int y);
   std::map<godot::Vector2i, int> mCoordsToTile;
-  std::unique_ptr<DistanceMap::NavigationAPI> mpNavigator;
+  // mpNavigator removed: NavigationGraph moved to CuteLott repo
+  // std::unique_ptr<DistanceMap::NavigationAPI> mpNavigator;
 };
 
 }  // namespace godot

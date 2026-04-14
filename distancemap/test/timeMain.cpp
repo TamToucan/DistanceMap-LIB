@@ -6,7 +6,8 @@
 
 #include "GridToGraph.hpp"
 #include "GridTypes.hpp"
-#include "NavigationGraph.hpp"
+// NavigationGraph moved to CuteLott repo
+// #include "NavigationGraph.hpp"
 #include "Router.hpp"
 
 using namespace DistanceMap;
@@ -17,6 +18,7 @@ std::pair<float, float> computeDirection(float angleDeg) {
   return {std::cos(radians), std::sin(radians)};
 }
 
+#if 0 // NavigationGraph moved to CuteLott; Router::RouteCtx stripped to A* cache only
 bool testNavigator(const std::string& name,
                    std::function<float(DistanceMap::Router::RouteCtx*,
                                        DistanceMap::GridType::Vec2,
@@ -113,4 +115,9 @@ int main(int argc, char** argv) {
     std::cout << "ERROR: NO PATH" << std::endl;
     return 1;
   }
+}
+#endif // NavigationGraph block
+
+int main(int /*argc*/, char** /*argv*/) {
+  return 0;
 }
