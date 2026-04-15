@@ -6,7 +6,7 @@
 #include "GridToGraph.hpp"
 #include "GridTypes.hpp"
 /*/
-#include "NavigationGraph.hpp"
+#include "NavigatorGraph.hpp"
 */
 #include "DistanceMapCore.hpp"
 #include "Router.hpp"
@@ -46,7 +46,7 @@ int main(int argc, char **argv) {
   auto graph = GridToGraph::makeGraph(floorGrid);
   */
   auto pathGrid(grid);
-  // Router::Info removed from initialize(); NavigationGraph moved to CuteLott repo
+  // Router::Info removed from initialize(); NavigatorGraph moved to CuteLott repo
   // DistanceMap::Router::Info info;
   // info.mCaveHeight = 32;
   // info.mCellWidth = 8;
@@ -55,7 +55,7 @@ int main(int argc, char **argv) {
   DistanceMap::DistanceMapCore core;
   core.initialize(grid);
 
-#if 0 // pNavigator block disabled: NavigationGraph moved to CuteLott repo
+#if 0 // pNavigator block disabled: NavigatorGraph moved to CuteLott repo
   auto pNavigator = core.makeNavigator(DistanceMap::NavigatorType::GRAPH);
 
   DistanceMap::GridType::Vec2 from(300, 250);

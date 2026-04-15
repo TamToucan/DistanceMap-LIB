@@ -47,7 +47,7 @@ class GDDISTANCE_MAP_API GDDistanceMap : public RefCounted {
  private:
   godot::Vector2i getMapPos(int x, int y);
   std::map<godot::Vector2i, int> mCoordsToTile;
-  // mpNavigator removed: NavigationGraph moved to CuteLott repo
+  // mpNavigator removed: NavigatorGraph moved to CuteLott repo
   // std::unique_ptr<DistanceMap::NavigationAPI> mpNavigator;
 };
 

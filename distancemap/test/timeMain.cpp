@@ -6,8 +6,8 @@
 
 #include "GridToGraph.hpp"
 #include "GridTypes.hpp"
-// NavigationGraph moved to CuteLott repo
-// #include "NavigationGraph.hpp"
+// NavigatorGraph moved to CuteLott repo
+// #include "NavigatorGraph.hpp"
 #include "Router.hpp"
 
 using namespace DistanceMap;
@@ -18,7 +18,7 @@ std::pair<float, float> computeDirection(float angleDeg) {
   return {std::cos(radians), std::sin(radians)};
 }
 
-#if 0 // NavigationGraph moved to CuteLott; Router::RouteCtx stripped to A* cache only
+#if 0 // NavigatorGraph moved to CuteLott; Router::RouteCtx stripped to A* cache only
 bool testNavigator(const std::string& name,
                    std::function<float(DistanceMap::Router::RouteCtx*,
                                        DistanceMap::GridType::Vec2,
@@ -92,14 +92,14 @@ int main(int argc, char** argv) {
   info.mCellWidth = 8;
   info.mCellHeight = 8;
 
-  Routing::NavigationGraph navGraph(graph, info);
+  Routing::NavigatorGraph navGraph(graph, info);
 
   GridType::Vec2 from1(300, 250);
   GridType::Vec2 to1(1950, 1086);
 
   LOG_INFO("## ======= NAVIGATOR BENCHMARK =======");
   bool result = testNavigator(
-      "NavigationGraph",
+      "NavigatorGraph",
       [&navGraph](DistanceMap::Router::RouteCtx* ctx,
                   DistanceMap::GridType::Vec2 from,
                   DistanceMap::GridType::Vec2 to, int type, float dt) {
@@ -116,7 +116,7 @@ int main(int argc, char** argv) {
     return 1;
   }
 }
-#endif // NavigationGraph block
+#endif // NavigatorGraph block
 
 int main(int /*argc*/, char** /*argv*/) {
   return 0;
