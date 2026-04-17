@@ -1,33 +1,55 @@
 #ifndef DISTANCEMAP_SRC_WALLDISTANCEGRID_HPP_
 #define DISTANCEMAP_SRC_WALLDISTANCEGRID_HPP_
 
+#include <cstdint>
+#include <algorithm>
 #include <vector>
 #include "GridTypes.hpp"
 
 namespace DistanceMap {
 
 //
-// Function to compute the distance grid
-// Input grid is non-0 = wall
-// Distance grid is a new grid the size of the input which has
-// distance to the nearest wall (So 0 if it is a wall)
+// Flat, row-major grid of uint8_t wall-distance values.
+// Each cell stores the BFS distance to the nearest wall, capped at 255.
+// Value 0 means the cell itself is a wall.
 //
-std::vector<std::vector<int>> makeWallDistanceGrid(const GridType::Grid& grid);
+struct WallDistanceGrid {
+    std::vector<uint8_t> data; ///< Row-major storage: data[y * width + x]
+    int width  = 0;
+    int height = 0;
 
+    /// Returns the wall-distance at (x, y). Caller must ensure valid(x, y).
+    uint8_t get(int x, int y) const {
+        return data[static_cast<size_t>(y) * width + x];
+    }
+
+    /// Returns true if (x, y) is within grid bounds.
+    bool valid(int x, int y) const {
+        return x >= 0 && x < width && y >= 0 && y < height;
+    }
+};
+// Input grid is non-0 = wall
+WallDistanceGrid makeWallDistanceGrid(const GridType::Grid& grid);
+
+//
 // A grid where each entry is a packed dist can see before Wall
+//
 struct SightGrid {
 	GridType::Grid sight;
 	int getNorth(int x, int y) const { return sight[y][x] & 0xff; }
 	int getEast (int x, int y) const { return (sight[y][x] & 0xff00) >> 8; }
 	int getSouth(int x, int y) const { return (sight[y][x] & 0xff0000) >> 16; }
 	int getWest (int x, int y) const { return static_cast<unsigned int>(sight[y][x] & 0xff000000) >> 24; }
+    int getFurthest(int x, int y) const {
+        return std::max({getNorth(x, y), getEast(x, y), getSouth(x, y), getWest(x, y)});
+    }
+    int getNearest(int x, int y) const {
+        return std::min({getNorth(x, y), getEast(x, y), getSouth(x, y), getWest(x, y)});
+    }
 };
-
-
+// Input grid is non-0 = wall
 SightGrid makeSightGrid(const GridType::Grid& grid);
 
-}
-
-
+} // namespace DistanceMap
 
 #endif /* DISTANCEMAP_SRC_WALLDISTANCEGRID_HPP_ */

@@ -20,7 +20,7 @@ public:
 
 private:
   GridToGraph::Graph m_graph;
-  GridType::Grid wallDistGrid;
+  WallDistanceGrid wallDistGrid;
   DistanceMap::SightGrid sightGrid;
 };
 } // namespace DistanceMap
