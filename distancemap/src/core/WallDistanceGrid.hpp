@@ -3,6 +3,7 @@
 
 #include <cstdint>
 #include <algorithm>
+#include <limits>
 #include <vector>
 #include "GridTypes.hpp"
 
@@ -44,7 +45,15 @@ struct SightGrid {
         return std::max({getNorth(x, y), getEast(x, y), getSouth(x, y), getWest(x, y)});
     }
     int getNearest(int x, int y) const {
-        return std::min({getNorth(x, y), getEast(x, y), getSouth(x, y), getWest(x, y)});
+        int n = getNorth(x,y);
+        int e = getEast(x,y);
+        int s = getSouth(x,y);
+        int w = getWest(x,y);
+        n = n ? n : std::numeric_limits<int>::max();
+        e = e ? e : std::numeric_limits<int>::max();
+        s = s ? s : std::numeric_limits<int>::max();
+        w = w ? w : std::numeric_limits<int>::max();
+        return std::min({n, e, s, w});
     }
 };
 // Input grid is non-0 = wall
