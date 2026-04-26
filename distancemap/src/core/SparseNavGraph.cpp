@@ -567,23 +567,31 @@ std::vector<int> SparseNavGraph::findDistantRouteViaBoundaries(
     int zTo   = zonePath[i + 1];
     const auto &bcMap = zones[zFrom].zoneBoundaryCellMap;
     auto it = bcMap.find(zTo);
-    if (it == bcMap.end() || it->second.empty()) {
+    // Flatten across all base-edge slots (BoundaryCellMap is now
+    // unordered_map<int, vector<BoundaryCells>> — one slot per crossing).
+    std::vector<const GridType::BoundaryInfo *> flat;
+    if (it != bcMap.end()) {
+      for (const auto &slot : it->second) {
+        for (const auto &bi : slot) {
+          flat.push_back(&bi);
+        }
+      }
+    }
+    if (flat.empty()) {
       LOG_INFO("FR: BdyWpt: no boundary cells from zone " << zFrom
                << " to " << zTo << "; aborting");
       return {};
     }
     // Pick a crossing cell biased by costBias so different agents use different
     // boundary points.  The bias mixes in the transition index for additional variety.
-    const auto &cells = it->second;
     int pick = static_cast<int>((static_cast<unsigned>(costBias + i) * 2654435761u) >> 26)
-               % static_cast<int>(cells.size());
-    auto cellIt = cells.begin();
-    std::advance(cellIt, pick);
-    int waypointNode = findClosestNodeToBoundary(cellIt->sink,
+               % static_cast<int>(flat.size());
+    const GridType::BoundaryInfo *picked = flat[pick];
+    int waypointNode = findClosestNodeToBoundary(picked->sink,
                                                  zones[zFrom].baseNodeIdxs);
     if (waypointNode < 0) {
       LOG_INFO("FR: BdyWpt: no node near boundary at "
-               << cellIt->sink.first << "," << cellIt->sink.second
+               << picked->sink.first << "," << picked->sink.second
                << "; aborting");
       return {};
     }

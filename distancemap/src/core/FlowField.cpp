@@ -219,8 +219,15 @@ void generateFlowGrids(GridToGraph::Graph &graph) {
                              << " adjZones: " << adjZones.size());
       for (int ni = 0; ni < adjZones.size(); ++ni) {
         int adjZone = adjZones[ni];
-        const auto &boundaryCells = ablv.zones[zi].zoneBoundaryCellMap[adjZone];
-        auto localSinks = convertSinksToLocal(boundaryCells, subGrid);
+        const auto &boundarySlots =
+            ablv.zones[zi].zoneBoundaryCellMap[adjZone];
+        // BoundaryCellMap is now segmented into one slot per base-edge
+        // crossing; flow-field generation just needs all sinks together.
+        GridType::BoundaryCells flatBoundary;
+        for (const auto &slot : boundarySlots) {
+          flatBoundary.insert(slot.begin(), slot.end());
+        }
+        auto localSinks = convertSinksToLocal(flatBoundary, subGrid);
 
         LOG_DEBUG("      zone:" << adjZone << " sinks: " << localSinks.size());
         for (const auto &bi : localSinks) {

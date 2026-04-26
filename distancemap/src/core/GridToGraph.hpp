@@ -90,25 +90,26 @@ const int PATH = 0x01; // NOTE: Must be 1 for dead end detection
 // Each abstract node is then turned into a ZoneInfo with
 // info on the base nodes/edges in that zone and the adjacent zones.
 //
+struct ZoneBridgeEdge {
+  int zoneFrom;
+  int zoneTo;
+  int whichEdge;
+  int bridgePriority;
+};
+
 struct AbstractLevel {
   std::vector<AbstractEdge> abstractEdges;
   std::vector<AbstractNode> abstractNodes;
   GridType::ZoneGrid zoneGrid;
   std::vector<FlowField::SubGrid> subGrids;
   std::vector<GridType::ZoneInfo> zones;
+  std::vector<ZoneBridgeEdge> zoneBridgeEdges;
 };
 
 // Map of ALL BaseFromIdx,BaseToIdx pairs returning the total length of path
 // connecting node pair. i.e. the total length of all the paths to get from
 // the first node to the second node.
 using PathCostMap = std::unordered_map<std::pair<int, int>, int, PairHash>;
-
-struct FallbackCell {
-  int nextFlowX = 0;
-  int nextFlowY = 0; // Closest flow field point
-  int distance = -1;
-};
-using FallbackGrid = std::vector<std::vector<FallbackCell>>;
 
 struct Graph {
   GridType::Grid infoGrid;

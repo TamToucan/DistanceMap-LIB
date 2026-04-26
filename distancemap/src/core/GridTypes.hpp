@@ -166,7 +166,9 @@ struct BoundaryInfoSinkHash {
 // Adjacent Zone Index => unique set of of boundary cells
 using BoundaryCells = std::unordered_set<BoundaryInfo, BoundaryInfoSinkHash,
                                          BoundaryInfoSinkComparator>;
-using BoundaryCellMap = std::unordered_map<int, BoundaryCells>;
+// Adjacent Zone Index => vector of BoundaryCells, one slot per base edge
+// crossing into that neighbor zone (segments parallel crossings).
+using BoundaryCellMap = std::unordered_map<int, std::vector<BoundaryCells>>;
 
 struct ZoneInfo {
   std::vector<int>

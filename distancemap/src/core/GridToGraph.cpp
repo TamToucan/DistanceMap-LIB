@@ -2223,45 +2223,526 @@ generateAbstractZones(ZoneGrid &zoneGrid, const Grid &grid,
 }
 
 ////////////////////////////////////////////////////////
+#if 0
+// Resolve which baseEdge index a boundary cell at (x,y) belongs to. Used to
+// segment BoundaryCellMap into one slot per base-edge crossing.
+//   EDGE  → low bits are baseEdge index directly.
+//   NODE  → scan baseGraph[nodeIdx]; the connecting baseEdge is the one whose
+//           neighbor base node lives in `neighborZone`.
+//   XPND  → walk dist*dir per hop while still XPND; terminus is EDGE or NODE.
+//   else  → 8-neighbour scan for any EDGE cell; sentinel -1 if nothing found.
+static int findEdgeIdxForCell(const Grid &infoGrid,
+                              const BaseGraph &baseGraph,
+                              const std::vector<Edge> &baseEdges,
+                              const std::vector<Point> &baseNodes,
+                              const std::vector<Point> &dendNodes,
+                              const ZoneGrid &zoneGrid,
+                              int x, int y, int neighborZone) {
+  int rows = static_cast<int>(infoGrid.size());
+  int cols = static_cast<int>(infoGrid[0].size());
 
-void generateZoneBoundaries(AbstractLevel &abstractLevel) {
+  auto nodeToEdge = [&](int nodeIdx) -> int {
+    if (nodeIdx < 0 || nodeIdx >= static_cast<int>(baseNodes.size()))
+      return -1;
+    for (const auto &info : baseGraph[nodeIdx]) {
+      if (info.neighbor < 0 ||
+          info.neighbor >= static_cast<int>(baseNodes.size()))
+        continue;
+      const Point &nbrPt = baseNodes[info.neighbor];
+      int nbrZone = zoneGrid[nbrPt.second][nbrPt.first].closestAbstractNodeIdx;
+      if (nbrZone == neighborZone) {
+        return info.edgeIndex;
+      }
+    }
+    LOG_ERROR("Could not find edge for node: " << nodeIdx << " zone: " << neighborZone);
+    return -1;
+  };
+
+  auto dendToEdge = [&](int dendIdx) -> int {
+    // A dead-end is a leaf — exactly one edge connects to it, with
+    // toDeadEnd=true and to==dendIdx. The edge's `from` is a base node;
+    // forward to nodeToEdge to find the crossing edge into neighborZone.
+    for (const auto &e : baseEdges) {
+      if (e.toDeadEnd && e.to == dendIdx) {
+        return nodeToEdge(e.from);
+      }
+    }
+    LOG_ERROR("Could not find edge for dend: " << dendIdx
+                                               << " zone: " << neighborZone);
+    return -1;
+  };
+
+  auto xpndToEdge = [&](int x, int y) -> int {
+    // Follow XPND pointers — multiply dist*dir per hop — until terminus
+    // lands on an EDGE or NODE cell.
+    int nx = x;
+    int ny = y;
+    int nCell = infoGrid[y][x];
+    int safety = 0;
+
+    while (nCell & XPND) {
+      int dir = get_XPND_DIR(nCell);
+      int dst = get_XPND_DIST(nCell);
+
+      nx += directions8[dir].first * dst;
+      ny += directions8[dir].second * dst;
+
+      if (!isInBounds(nx, ny, rows, cols)) {
+        nCell = 0;
+        break;
+      }
+
+      nCell = infoGrid[ny][nx];
+
+      if (++safety > 64)
+        break; // pathological case
+    }
+
+    if (nCell & EDGE) return nCell & EDGE_MASK;
+    if (nCell & NODE) return nodeToEdge(nCell & EDGE_MASK);
+    if (nCell & DEND) return dendToEdge(nCell & EDGE_MASK);
+    LOG_ERROR("Could not find edge for XPND: " << x << "," << y << " in zone "
+                                               << neighborZone);
+    return -1;
+  };
+
+  int cell = infoGrid[y][x];
+
+  if (cell & EDGE) return cell & EDGE_MASK;
+
+  if (cell & XPND) return xpndToEdge(x, y);
+  if (cell & NODE) return nodeToEdge(cell & EDGE_MASK);
+  if (cell & DEND) return dendToEdge(cell & EDGE_MASK);
+  if (cell & BOUNDARY) {
+    int dirIdx = cell & GridType::DIR_MASK;
+    int wx = x + GridType::directions8[dirIdx].first;
+    int wy = y + GridType::directions8[dirIdx].second;
+    if (!isInBounds(wx, wy, rows, cols)) {
+      return -1;
+    }
+    cell = infoGrid[wy][wx];
+    if (cell & WALL) return -1;
+    if (cell & EDGE) return cell & EDGE_MASK;
+    if (cell & NODE) return nodeToEdge(cell & EDGE_MASK);
+    if (cell & XPND) return xpndToEdge(wx, wy);
+  }
+  // Ignore pure WALL cells
+  return -1;
+}
+#endif
+
+void generateZoneBoundaries(AbstractLevel &abstractLevel,
+                            const Grid &infoGrid,
+                            const BaseGraph &baseGraph,
+                            const std::vector<Edge> &baseEdges,
+                            const std::vector<Point> &baseNodes,
+                            const std::vector<Point> &dendNodes) {
   LOG_INFO("## generateZoneBoundaries");
   const ZoneGrid &zoneGrid = abstractLevel.zoneGrid;
   std::vector<ZoneInfo> &zones = abstractLevel.zones;
   int rows = zoneGrid.size();
   int cols = zoneGrid[0].size();
+
+  // For each unordered zone pair, map baseEdge index → slot index. Both sides
+  // of a crossing share the slot (slot-parity), so they line up across the
+  // two zones' BoundaryCellMaps.
+  std::unordered_map<std::pair<int, int>, std::unordered_map<int, int>,
+                     PairHash>
+      pairEdgeSlots;
+
+  auto ensureSlot = [](BoundaryCellMap &bcm, int neighborZone,
+                       int slot) -> BoundaryCells & {
+    auto &vec = bcm[neighborZone];
+    if (static_cast<int>(vec.size()) <= slot)
+      vec.resize(slot + 1);
+    return vec[slot];
+  };
+  // Phase 1: collect every zone-crossing cell into slot 0 of both sides.
   for (int y = 1; y < rows - 1; ++y) {
     for (int x = 1; x < cols - 1; ++x) {
       int curZone = zoneGrid[y][x].closestAbstractNodeIdx;
       if (curZone == -1)
         continue;
+      LOG_DEBUG("Cell: " << x << "," << y << " is in zone " << curZone);
 
-      // Only need to 4 dirsT since scanning left->right, top->bottom
-      for (int dir4 = 0; dir4 < searchDirs4.size(); ++dir4) {
+      // Only 4 dirs needed — left-to-right, top-to-bottom scan covers the
+      // mirrored crossing in the same iteration.
+      for (int dir4 = 0; dir4 < static_cast<int>(searchDirs4.size()); ++dir4) {
         int nx = x + searchDirs4[dir4].first;
         int ny = y + searchDirs4[dir4].second;
 
         int neighborZone = zoneGrid[ny][nx].closestAbstractNodeIdx;
-        if ((neighborZone != -1) && (neighborZone != curZone)) {
-          // Add this cell to current zone's boundary map for neighborZone
-          int dir8 = dir4todir8Index[dir4];
-          zones[curZone].zoneBoundaryCellMap[neighborZone].insert(
-              {{x, y}, dir8});
+        LOG_DEBUG("..Check:" << nx << "," << ny << ":" << neighborZone);
+        if (neighborZone == -1 || neighborZone == curZone)
+          continue;
 
-          // Also add neighbor cell to neighbor zone's boundary map for
-          // currentZone
-          zones[neighborZone].zoneBoundaryCellMap[curZone].insert(
-              {{nx, ny}, reverseDirIndex[dir8]});
+        int dir8 = dir4todir8Index[dir4];
+        LOG_DEBUG("....=> dir8:" << dir8 << " add " << x <<","<< y << " " << nx<<","<<ny);
+        ensureSlot(zones[curZone].zoneBoundaryCellMap, neighborZone, 0)
+            .insert({{x, y}, dir8});
+        ensureSlot(zones[neighborZone].zoneBoundaryCellMap, curZone, 0)
+            .insert({{nx, ny}, reverseDirIndex[dir8]});
+      }
+    }
+  }
+  for (int zA=0; zA < zones.size(); ++zA) {
+    for (auto &kv : zones[zA].zoneBoundaryCellMap) {
+      LOG_DEBUG("Zone " << zA << " has boundary with zone " << kv.first);
+      for (auto &bi : kv.second[0]) {
+        LOG_DEBUG_CONT(" " << bi.sink.first << "," << bi.sink.second);
+      }
+      LOG_DEBUG(" ");
+    }
+  }
 
-          LOG_DEBUG("  ZONE: " << curZone << " BOUNDARY: " << neighborZone
-                               << " dir4: " << dir4 << " dir8: " << dir8
-                               << " rev8: " << reverseDirIndex[dir8]
-                               << " cell: " << x << "," << y
-                               << " neighbor: " << nx << "," << ny);
+  // ---------------------------------------------------------------------------
+  // Phase 2 — Split each (zoneA <-> zoneB) crossing into "islands".
+  //
+  // After Phase 1, every zone pair (zA, zB) that touches has exactly ONE slot
+  // in its zoneBoundaryCellMap: kv.second[0] holds every cell on zA's side of
+  // the shared border between the two zones. But two zones can be adjacent
+  // along multiple physically separate stretches of border (e.g. two doorways
+  // in the same wall, or a corridor that wraps around an obstacle). Each such
+  // stretch is an "island" — a connected component of boundary cells.
+  //
+  // Goal of Phase 2: replace that single slot with one slot PER island, and
+  // do it symmetrically so that zA->zB slot k and zB->zA slot k describe the
+  // SAME crossing from opposite sides. Downstream code (FlowField, Guard
+  // navigator, ZoneBridgeEdge graph) keys behaviour on this slot index, so
+  // the two sides MUST agree on the indexing.
+  //
+  // We can't just BFS one side and mirror via exitDir, because BoundaryCells
+  // is keyed by sink position only — a cell that points in two directions
+  // collapses to a single stored exitDir, so some B-side cells have no A-side
+  // cell pointing at them. The robust fix is to flood-fill over the UNION of
+  // both sides' cell sets under 8-neighbour adjacency. Each connected
+  // component naturally splits into its A-members and B-members, giving us a
+  // matched pair of slots without any direction-mirroring guesswork.
+  // ---------------------------------------------------------------------------
+  for (int zA = 0; zA < static_cast<int>(zones.size()); ++zA) {
+    for (auto &kv : zones[zA].zoneBoundaryCellMap) {
+      int zB = kv.first;
+
+      // Each crossing is symmetric (zA<->zB == zB<->zA). Process the canonical
+      // ordering only — when the outer loop reaches zB it would redo the same
+      // work and clobber what we just wrote.
+      if (zA >= zB)
+        continue;
+
+      // Phase 1 may have left the slot empty if the two zones don't actually
+      // share any boundary cells; nothing to split.
+      if (kv.second.empty())
+        continue;
+
+      // cellsA = zA's view of the border with zB (Phase-1 single slot).
+      const BoundaryCells &cellsA = kv.second[0];
+
+      // Look up the symmetric entry on zB's side. If it's missing or empty
+      // the data is malformed for this pair; skip rather than crash.
+      auto bIt = zones[zB].zoneBoundaryCellMap.find(zA);
+      if (bIt == zones[zB].zoneBoundaryCellMap.end() || bIt->second.empty())
+        continue;
+      const BoundaryCells &cellsB = bIt->second[0];
+
+      // Build position->BoundaryInfo lookups for both sides. We need O(1)
+      // "is there an A-cell here? a B-cell here?" tests during the flood fill,
+      // and we need to recover the original BoundaryInfo (sink + exitDir +
+      // edgeIdx) when assigning a cell to its island bucket.
+      std::unordered_map<Point, BoundaryInfo, PairHash> pointToA;
+      pointToA.reserve(cellsA.size());
+      for (const auto &bi : cellsA)
+        pointToA.emplace(bi.sink, bi);
+
+      std::unordered_map<Point, BoundaryInfo, PairHash> pointToB;
+      pointToB.reserve(cellsB.size());
+      for (const auto &bi : cellsB)
+        pointToB.emplace(bi.sink, bi);
+
+      // An island is a pair (A-cells in this component, B-cells in this
+      // component). Either vector may be empty if the component happens to
+      // sit entirely on one side, but in practice both will populate because
+      // boundary cells come from edges that cross the zone divide.
+      using IslandPair =
+          std::pair<std::vector<BoundaryInfo>, std::vector<BoundaryInfo>>;
+      std::vector<IslandPair> islands;
+
+      // Visited set is shared across all flood fills in this (zA, zB) pair so
+      // we don't re-enter a component when iterating seeds.
+      std::unordered_set<Point, PairHash> visited;
+      visited.reserve(pointToA.size() + pointToB.size());
+
+      // Iterative DFS flood-fill from `start`, walking 8-connected cells that
+      // belong to either pointToA or pointToB. Every visited cell is added to
+      // the appropriate side(s) of the current island. A cell that exists in
+      // BOTH maps (same sink position appears on both sides — possible at
+      // diagonal corner pinches) is added to both islA and islB.
+      auto seedFrom = [&](const Point &start) {
+        LOG_DEBUG("Starting island at: " << start.first << "," << start.second);
+        std::vector<BoundaryInfo> islA;
+        std::vector<BoundaryInfo> islB;
+
+        std::vector<Point> stack{start};
+        visited.insert(start);
+
+        while (!stack.empty()) {
+          Point p = stack.back();
+          stack.pop_back();
+
+          // Record this cell on the A side if it came from cellsA.
+          auto itA = pointToA.find(p);
+          if (itA != pointToA.end()) {
+            islA.push_back(itA->second);
+            LOG_DEBUG("..Adding A " << p.first << "," << p.second);
+          }
+          // ...and/or on the B side if it came from cellsB.
+          auto itB = pointToB.find(p);
+          if (itB != pointToB.end()) {
+            islB.push_back(itB->second);
+            LOG_DEBUG("..Adding B " << p.first << "," << p.second);
+          }
+
+          // Expand to 8-connected neighbours. A neighbour is part of THIS
+          // island only if it (a) has not been visited, and (b) appears in
+          // either pointToA or pointToB (i.e. it is a boundary cell for this
+          // particular zone pair — neighbours that belong to other crossings
+          // or to the zone interior are not part of the component).
+          for (const auto &d : directions8) {
+            Point np{p.first + d.first, p.second + d.second};
+            if (visited.count(np))
+              continue;
+            if (!pointToA.count(np) && !pointToB.count(np))
+              continue;
+            visited.insert(np);
+            stack.push_back(np);
+          }
+        }
+
+        // Discard empty components (defensive — shouldn't happen given seeds
+        // are themselves boundary cells, but cheap to guard).
+        if (!islA.empty() || !islB.empty())
+          islands.push_back({std::move(islA), std::move(islB)});
+      };
+
+      // Seed from every A-cell first, then every B-cell. The visited set
+      // means each component is only flooded once regardless of which side's
+      // cell triggers it. Seeding from both sides guarantees we don't miss a
+      // component made entirely of B-cells that no A-cell happens to touch.
+      for (const auto &bi : cellsA) {
+        if (!visited.count(bi.sink))
+          seedFrom(bi.sink);
+      }
+      for (const auto &bi : cellsB) {
+        if (!visited.count(bi.sink))
+          seedFrom(bi.sink);
+      }
+
+      // Materialise the islands into the BoundaryCells slot vectors. Index k
+      // is the SAME island viewed from each side, so newSlotsA[k] and
+      // newSlotsB[k] together describe one connected crossing of the border.
+      std::vector<BoundaryCells> newSlotsA(islands.size());
+      std::vector<BoundaryCells> newSlotsB(islands.size());
+      LOG_DEBUG("Adding slots to: " << zA << "<->" << zB);
+      for (int k = 0; k < static_cast<int>(islands.size()); ++k) {
+        LOG_DEBUG("  Island " << k);
+        for (const auto &bi : islands[k].first) {
+          LOG_DEBUG("    A " << bi.sink.first << "," << bi.sink.second);
+          newSlotsA[k].insert(bi);
+        }
+        for (const auto &bi : islands[k].second) {
+          LOG_DEBUG("    B " << bi.sink.first << "," << bi.sink.second);
+          newSlotsB[k].insert(bi);
+        }
+      }
+
+      // Replace the Phase-1 single-slot vectors with the per-island vectors.
+      // After this point both zA->zB and zB->zA agree: slot k on either side
+      // points at the same physical island in the world.
+      kv.second = std::move(newSlotsA);
+      bIt->second = std::move(newSlotsB);
+
+      LOG_INFO("Boundary " << zA << "<->" << zB << " islands: "
+                              << islands.size());
+    }
+  }
+  LOG_INFO("## generateZoneBoundaries DONE");
+}
+
+namespace {
+
+struct ZBEdge {
+  int u;
+  int v;
+  int slot;
+  int edgeId;
+};
+
+static std::vector<ZBEdge> buildEdgeList(const AbstractLevel &ablv) {
+  std::vector<ZBEdge> edges;
+  int edgeId = 0;
+  for (int u = 0; u < static_cast<int>(ablv.zones.size()); ++u) {
+    for (const auto &kv : ablv.zones[u].zoneBoundaryCellMap) {
+      int v = kv.first;
+      if (u >= v)
+        continue;
+      const auto &slots = kv.second;
+      for (int k = 0; k < static_cast<int>(slots.size()); ++k) {
+        if (slots[k].empty())
+          continue;
+        edges.push_back({u, v, k, edgeId++});
+      }
+    }
+  }
+  return edges;
+}
+
+static std::vector<bool>
+findBridges(const std::vector<std::vector<std::pair<int, int>>> &adj,
+            int numEdges, int numNodes) {
+  std::vector<bool> isBridge(numEdges, false);
+  std::vector<int> disc(numNodes, -1);
+  std::vector<int> low(numNodes, -1);
+  int timer = 0;
+
+  struct DfsFrame {
+    int node;
+    int parentEdgeId;
+    int it;
+  };
+
+  for (int start = 0; start < numNodes; ++start) {
+    if (disc[start] != -1)
+      continue;
+    std::vector<DfsFrame> stack;
+    stack.push_back({start, -1, 0});
+    disc[start] = low[start] = timer++;
+    while (!stack.empty()) {
+      DfsFrame &f = stack.back();
+      if (f.it < static_cast<int>(adj[f.node].size())) {
+        std::pair<int, int> ne = adj[f.node][f.it++];
+        int nbr = ne.first;
+        int eid = ne.second;
+        if (eid == f.parentEdgeId)
+          continue;
+        if (disc[nbr] == -1) {
+          disc[nbr] = low[nbr] = timer++;
+          stack.push_back({nbr, eid, 0});
+        } else {
+          low[f.node] = std::min(low[f.node], disc[nbr]);
+        }
+      } else {
+        int childNode = f.node;
+        int childLow = low[childNode];
+        int parentEdgeId = f.parentEdgeId;
+        stack.pop_back();
+        if (!stack.empty()) {
+          int parentNode = stack.back().node;
+          if (childLow > disc[parentNode] && parentEdgeId >= 0) {
+            isBridge[parentEdgeId] = true;
+          }
+          low[parentNode] = std::min(low[parentNode], childLow);
         }
       }
     }
   }
+  return isBridge;
+}
+
+static int componentSizeAfterRemoving(const std::vector<ZBEdge> &edges,
+                                      int removeEdgeId, int startNode,
+                                      int numNodes) {
+  std::vector<std::vector<int>> adj(numNodes);
+  for (const auto &e : edges) {
+    if (e.edgeId == removeEdgeId)
+      continue;
+    adj[e.u].push_back(e.v);
+    adj[e.v].push_back(e.u);
+  }
+  std::vector<bool> visited(numNodes, false);
+  std::vector<int> queue;
+  queue.push_back(startNode);
+  visited[startNode] = true;
+  int count = 0;
+  while (!queue.empty()) {
+    int n = queue.back();
+    queue.pop_back();
+    ++count;
+    for (int nb : adj[n]) {
+      if (visited[nb])
+        continue;
+      visited[nb] = true;
+      queue.push_back(nb);
+    }
+  }
+  return count;
+}
+
+} // namespace
+
+static void buildZoneBridgeGraph(AbstractLevel &ablv) {
+  ablv.zoneBridgeEdges.clear();
+  int numNodes = static_cast<int>(ablv.zones.size());
+  if (numNodes == 0)
+    return;
+
+  std::vector<ZBEdge> edges = buildEdgeList(ablv);
+  if (edges.empty()) {
+    LOG_INFO("ZoneBridgeGraph: edges=0 bridges=0");
+    return;
+  }
+
+  std::vector<std::vector<std::pair<int, int>>> adj(numNodes);
+  for (const auto &e : edges) {
+    adj[e.u].push_back({e.v, e.edgeId});
+    adj[e.v].push_back({e.u, e.edgeId});
+  }
+
+  std::vector<bool> isBridge =
+      findBridges(adj, static_cast<int>(edges.size()), numNodes);
+
+  int bridgeCount = 0;
+  ablv.zoneBridgeEdges.reserve(edges.size() * 2);
+  for (const auto &e : edges) {
+    int priority = 0;
+    if (isBridge[e.edgeId]) {
+      int s = componentSizeAfterRemoving(edges, e.edgeId, e.u, numNodes);
+      priority = std::min(s, numNodes - s);
+      ++bridgeCount;
+    }
+    ablv.zoneBridgeEdges.push_back({e.u, e.v, e.slot, priority});
+    ablv.zoneBridgeEdges.push_back({e.v, e.u, e.slot, priority});
+  }
+
+  std::sort(ablv.zoneBridgeEdges.begin(), ablv.zoneBridgeEdges.end(),
+            [](const ZoneBridgeEdge &a, const ZoneBridgeEdge &b) {
+              if (a.bridgePriority != b.bridgePriority)
+                return a.bridgePriority > b.bridgePriority;
+              if (a.zoneFrom != b.zoneFrom)
+                return a.zoneFrom < b.zoneFrom;
+              if (a.zoneTo != b.zoneTo)
+                return a.zoneTo < b.zoneTo;
+              return a.whichEdge < b.whichEdge;
+            });
+
+  int top1 = 0;
+  int top2 = 0;
+  int top3 = 0;
+  for (const auto &zbe : ablv.zoneBridgeEdges) {
+    int p = zbe.bridgePriority;
+    if (p > top1) {
+      top3 = top2;
+      top2 = top1;
+      top1 = p;
+    } else if (p < top1 && p > top2) {
+      top3 = top2;
+      top2 = p;
+    } else if (p < top2 && p > top3) {
+      top3 = p;
+    }
+  }
+  LOG_INFO("ZoneBridgeGraph: edges=" << edges.size()
+                                     << " bridges=" << bridgeCount
+                                     << " top3=" << top1 << "," << top2 << ","
+                                     << top3);
 }
 
 // Main function to generate extra AbstractEdges
@@ -2415,8 +2896,11 @@ std::vector<AbstractLevel> makeAbstractLevels(const Graph &graph) {
     debugZones(pass, ablv, graph);
     debugZoneEdges(pass, ablv, graph);
 
-    generateZoneBoundaries(ablv);
+    generateZoneBoundaries(ablv, graph.infoGrid, graph.baseGraph,
+                           graph.baseEdges, graph.baseNodes, graph.deadEnds);
     debugZoneBoundaries(pass, ablv);
+
+    buildZoneBridgeGraph(ablv);
 
     // Fix connections to AbstractNodes
     //
@@ -2840,12 +3324,13 @@ void debugZoneBoundaries(int pass, const AbstractLevel &ablv) {
   Grid tempGrid(rows, std::vector<int>(cols, EMPTY));
   for (const auto &zone : ablv.zones) {
     for (const auto &zoneBoundary : zone.zoneBoundaryCellMap) {
-      int curZone = zoneBoundary.first;
-      const auto &boundaryCells = zoneBoundary.second;
-      for (const auto &boundary : boundaryCells) {
-        int c = boundary.sink.first;
-        int r = boundary.sink.second;
-        tempGrid[r][c] = WALL;
+      const auto &slots = zoneBoundary.second;
+      for (const auto &slot : slots) {
+        for (const auto &boundary : slot) {
+          int c = boundary.sink.first;
+          int r = boundary.sink.second;
+          tempGrid[r][c] = WALL;
+        }
       }
     }
   }
