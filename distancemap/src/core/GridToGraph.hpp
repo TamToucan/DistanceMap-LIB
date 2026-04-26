@@ -48,11 +48,11 @@
 //
 // ######################      4 Zones made for the 4 abstract nodes
 // #            -       #      Zone0 adjacent to Zone1
-// #     1      -       #      Zone1 adjacent to Zone0, Zone2
+// #     1      =       #      Zone1 adjacent to Zone0, Zone2
 // #            -   2   #      Zone2 adjacent to Zone1, Zone3
-// #-------#-----       #      Zone3 adjacent to Zone2
+// #--||---#-||--       #      Zone3 adjacent to Zone2
 // #       #            #      The '-' are boundary cells
-// #       ########-----#
+// #       ########-||--#
 // #   0   #            #
 // #       #    3       #
 // #       #            #
@@ -67,7 +67,20 @@
 // zone than can be reached.
 // So Zone3 subgrid would have 1 costFlowField since it is adjacent to Zone2
 //
+// The ZoneInfo has a map of adjZone -> vector of cell "islands" connect to that zone
+// e.g. in the above
+//  Zone1Map[0] -> 1 vector of the cells forming boundary with Zone0
+//          [2] -> 2 vectors of the cells foming boundary with Zone2
 //
+//  Zone0Map[1] -> 1 vector of the cells for the "other side" of the boundary with zone1
+//
+//  Zone2Map[1] -> 2 vectors of the cells forming boundary with Zone1
+//          [3] -> 1 vector of the cells forming boundary with Zone3
+//
+//  Zone3Map[2] -> 1 vector of the cells for the "other side" of the boundary with zone2
+//
+// There is also a zoneBridgeEdges which tells you which edges connect
+// which zones and with what priority.
 
 namespace DistanceMap {
 namespace GridToGraph {
@@ -83,6 +96,20 @@ using namespace GridType;
 const int EMPTY = 0x00;
 const int PATH = 0x01; // NOTE: Must be 1 for dead end detection
 
+// Describes an edge connecting two adjacent zones for the zoneBridgeEdges
+// in the abstract level.
+// - zoneFrom/zoneTo is the indices of the adjacent zones
+// - islandSlot is the index of the island in the zone's cell boundary for zones
+// - bridgePriority is the priority of the bridge. 0 = low, higher = more nodes
+// are unreachable if that boundary island is removed
+// 
+struct ZoneBridgeEdge {
+  int zoneFrom;
+  int zoneTo;
+  int islandSlot;
+  int bridgePriority;
+};
+
 // An AbstractLevel takes the base nodes and groups them into
 // clusters of size based on the level number. This creates
 // it's own craft of abstract nodes and edges and a grid of
@@ -90,20 +117,13 @@ const int PATH = 0x01; // NOTE: Must be 1 for dead end detection
 // Each abstract node is then turned into a ZoneInfo with
 // info on the base nodes/edges in that zone and the adjacent zones.
 //
-struct ZoneBridgeEdge {
-  int zoneFrom;
-  int zoneTo;
-  int whichEdge;
-  int bridgePriority;
-};
-
 struct AbstractLevel {
   std::vector<AbstractEdge> abstractEdges;
   std::vector<AbstractNode> abstractNodes;
   GridType::ZoneGrid zoneGrid;
   std::vector<FlowField::SubGrid> subGrids;
   std::vector<GridType::ZoneInfo> zones;
-  std::vector<ZoneBridgeEdge> zoneBridgeEdges;
+  std::vector<ZoneBridgeEdge> zoneBridgeEdges; // Priority high -> low
 };
 
 // Map of ALL BaseFromIdx,BaseToIdx pairs returning the total length of path

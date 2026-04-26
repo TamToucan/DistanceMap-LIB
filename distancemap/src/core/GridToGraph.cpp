@@ -2575,7 +2575,15 @@ struct ZBEdge {
   int slot;
   int edgeId;
 };
-
+//
+// Make list of edges going from low zone to high zone storing
+// the lowZone (u), highZone (v), island slot (k), monotonic edgeId (edgeId)
+// e.g.
+//   0 2 0 0      |--1--(2)----(3)
+//   0 2 1 1     (0)     |      |
+//   1 3 0 2      |--0----      --2-(1)
+//   2 3 0 3 
+//
 static std::vector<ZBEdge> buildEdgeList(const AbstractLevel &ablv) {
   std::vector<ZBEdge> edges;
   int edgeId = 0;
@@ -2690,14 +2698,24 @@ static void buildZoneBridgeGraph(AbstractLevel &ablv) {
     return;
   }
 
+  // The edges ia list of all fromLowZone -> toHighZone labeled with unique edgeId
+  // Make a mapping of zone -> vector of {adjacentZone, edgeId} pairs
+  //
+  //    fromZone -> [ {toZone, edgeId}, ... , {...}]
+  //    toZone -> [ {fromZone, eqdgeId}, ... , {...}]
+  //
   std::vector<std::vector<std::pair<int, int>>> adj(numNodes);
   for (const auto &e : edges) {
     adj[e.u].push_back({e.v, e.edgeId});
     adj[e.v].push_back({e.u, e.edgeId});
   }
 
+  // Find the edges which when cut remove at least one node from the graph
   std::vector<bool> isBridge =
       findBridges(adj, static_cast<int>(edges.size()), numNodes);
+
+  // For the bridge notes see how many nodes remain after removing. Use
+  //    min(remaining, total-remaining) as the priority value.
 
   int bridgeCount = 0;
   ablv.zoneBridgeEdges.reserve(edges.size() * 2);
@@ -2712,6 +2730,13 @@ static void buildZoneBridgeGraph(AbstractLevel &ablv) {
     ablv.zoneBridgeEdges.push_back({e.v, e.u, e.slot, priority});
   }
 
+  // Sort by 
+  //  - priority (descending)
+  //  - zoneFrom (ascending)
+  //  - zoneTo   (ascending)
+  //  - edgeId   (ascending)
+  // i.e. if two edges have same priority, the one with lower zoneFrom
+  // goes first, if same, then lower zoneTo, if same then use slot
   std::sort(ablv.zoneBridgeEdges.begin(), ablv.zoneBridgeEdges.end(),
             [](const ZoneBridgeEdge &a, const ZoneBridgeEdge &b) {
               if (a.bridgePriority != b.bridgePriority)
@@ -2720,7 +2745,7 @@ static void buildZoneBridgeGraph(AbstractLevel &ablv) {
                 return a.zoneFrom < b.zoneFrom;
               if (a.zoneTo != b.zoneTo)
                 return a.zoneTo < b.zoneTo;
-              return a.whichEdge < b.whichEdge;
+              return a.islandSlot < b.islandSlot;
             });
 
   int top1 = 0;
@@ -2900,8 +2925,6 @@ std::vector<AbstractLevel> makeAbstractLevels(const Graph &graph) {
                            graph.baseEdges, graph.baseNodes, graph.deadEnds);
     debugZoneBoundaries(pass, ablv);
 
-    buildZoneBridgeGraph(ablv);
-
     // Fix connections to AbstractNodes
     //
     LOG_INFO("   MAKE EXTRA: " << pass);
@@ -2913,6 +2936,9 @@ std::vector<AbstractLevel> makeAbstractLevels(const Graph &graph) {
     ablv.abstractEdges.insert(ablv.abstractEdges.end(), extraEdges.begin(),
                               extraEdges.end());
     debugAbstractEdges(pass, ablv, graph, "ABEXTRA");
+
+    // Add zone bridge graph
+    buildZoneBridgeGraph(ablv);
 
   } while (abstractLevels.back().zones.size() > 16);
 
