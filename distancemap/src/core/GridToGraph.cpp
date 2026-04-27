@@ -25,6 +25,10 @@
 #include "WallDistanceGrid.hpp"
 #include "ZSThinning.hpp"
 
+#ifdef RELEASE_BUILD
+#define NO_DIST_GRAPH_DEBUG
+#endif
+
 namespace DistanceMap {
 
 using namespace GridType;
@@ -357,7 +361,7 @@ inline bool isPath(int cellValue) {
   return cellValue && !isNode(cellValue);
 }
 
-#ifdef NO_DEBUG
+#ifdef NO_DIST_GRAPH_DEBUG
 void writeFloorGridToFile(const std::vector<std::vector<int>> &grid,
                           const std::string &filename) {}
 void debugDump(const Graph &graph) {}
@@ -454,7 +458,7 @@ std::vector<Point> detectNodes(const Grid &grid) {
 ///////////////////////////////////////////////////////////
 
 namespace {
-#ifndef NO_DEBUG
+#ifndef NO_DIST_GRAPH_DEBUG
 void makeTGA2(const char *name, const Grid &grid, unsigned int mask) {
   unsigned char *pPixel = new unsigned char[grid.size() * grid[0].size() * 4];
   unsigned char *pData = pPixel;
@@ -957,6 +961,42 @@ void restoreWalls(Grid &infoGrid, const Grid &floorGrid) {
     for (int x = 0; x < cols; ++x) {
       if (!isPath(floorGrid[y][x])) {
         infoGrid[y][x] = GridToGraph::WALL;
+      }
+    }
+  }
+}
+
+void markWallEscapes(Grid &infoGrid) {
+  int rows = (int)infoGrid.size();
+  int cols = (int)infoGrid[0].size();
+  for (int y = 0; y < rows; ++y) {
+    for (int x = 0; x < cols; ++x) {
+      int &cell = infoGrid[y][x];
+      if (!(cell & GridType::WALL) || (cell & GridType::BOUNDARY))
+        continue;
+      int bestDist = 0;
+      int bestDir  = 0;
+      for (int d = 0; d < (int)GridType::directions8.size(); ++d) {
+        auto dxy = GridType::directions8[d];
+        int nx = x + dxy.first;
+        int ny = y + dxy.second;
+        int steps = 1;
+        while (nx >= 0 && nx < cols && ny >= 0 && ny < rows) {
+          if (!(infoGrid[ny][nx] & GridType::WALL)) {
+            if (bestDist == 0 || steps < bestDist) {
+              bestDist = steps;
+              bestDir  = d;
+            }
+            break;
+          }
+          nx += dxy.first;
+          ny += dxy.second;
+          ++steps;
+        }
+      }
+      if (bestDist > 0) {
+        cell |= (bestDir & GridType::DIR_MASK) |
+                (bestDist << WALL_DIST_SHIFT);
       }
     }
   }
@@ -3103,6 +3143,7 @@ Graph makeGraph(const Grid &floorGrid) {
   //
   restoreWalls(graph.infoGrid, floorGrid);
   markGridBoundaries(graph.infoGrid);
+  markWallEscapes(graph.infoGrid);
   expandPaths(graph.infoGrid);
 
   //
@@ -3207,7 +3248,7 @@ const char *makeDebugName(int pass, const char *name) {
   return fname;
 }
 
-#ifndef NO_DEBUG
+#ifndef NO_DIST_GRAPH_DEBUG
 void debugGridEdges(const Graph &graph) {
   std::vector<int> uncon =
       checkConnectivity(graph.baseGraph, graph.baseNodes.size());
@@ -3671,7 +3712,7 @@ void debugDump(const Graph &graph) {
 }
 #endif
 
-#ifndef NO_DEBUG
+#ifndef NO_DIST_GRAPH_DEBUG
 void writeFloorGridToFile(const std::vector<std::vector<int>> &grid,
                           const std::string &filename) {
   std::ofstream outFile(filename);
@@ -3728,7 +3769,7 @@ std::vector<std::vector<int>> readGridFromFile(const std::string &filename) {
   return grid;
 }
 
-#ifndef NO_DEBUG
+#ifndef NO_DIST_GRAPH_DEBUG
 void debugZoneEdges(int pass, const AbstractLevel &ablv, const Graph &graph) {
   LOG_INFO("## ZONE EDGES DETAILED DUMP");
   LOG_INFO("================================================");
@@ -3789,7 +3830,7 @@ void debugZoneEdges(int pass, const AbstractLevel &ablv, const Graph &graph) {
 }
 #endif
 
-#ifndef NO_DEBUG
+#ifndef NO_DIST_GRAPH_DEBUG
 void debugExpandedPaths(const Grid &infoGrid) {
   for (int r = 0; r < infoGrid.size(); ++r) {
     for (int c = 0; c < infoGrid[0].size(); ++c) {

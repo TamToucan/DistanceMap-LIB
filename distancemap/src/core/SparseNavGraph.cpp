@@ -64,18 +64,6 @@ const std::vector<int> &SparseNavGraph::getZoneEdges(int zoneId) const {
              : zoneToEdges[zoneId];
 }
 
-int SparseNavGraph::computeMedianEdgeCost() const {
-  std::vector<int> costs;
-  costs.reserve(edgeCosts.size());
-  for (int c : edgeCosts) {
-    if (c != 0xffff) costs.push_back(c);
-  }
-  if (costs.empty()) return 0;
-  auto mid = costs.begin() + static_cast<ptrdiff_t>(costs.size() / 2);
-  std::nth_element(costs.begin(), mid, costs.end());
-  return *mid;
-}
-
 // Helper for A*
 struct SearchState {
   int node;
@@ -817,6 +805,18 @@ makeEdgeGrid(const std::vector<GridType::Edge> edges,
   return result;
 }
 
+int computeMedianEdgeCost(const std::vector<int>& edgeCosts) {
+  std::vector<int> costs;
+  costs.reserve(edgeCosts.size());
+  for (int c : edgeCosts) {
+    if (c != 0xffff) costs.push_back(c);
+  }
+  if (costs.empty()) return 0;
+  auto mid = costs.begin() + static_cast<ptrdiff_t>(costs.size() / 2);
+  std::nth_element(costs.begin(), mid, costs.end());
+  return *mid;
+}
+
 SparseNavGraph buildSparseGraph(const std::vector<GridType::Point> &baseNodes,
                                 const std::vector<GridType::Point> &deadEnds,
                                 const std::vector<GridType::Edge> &baseEdges,
@@ -856,6 +856,8 @@ SparseNavGraph buildSparseGraph(const std::vector<GridType::Point> &baseNodes,
 
   g.edgeGrid = makeEdgeGrid(baseEdges, infoGrid);
 
+  g.medianEdgeCost = computeMedianEdgeCost(g.edgeCosts);
+  
   return g;
 }
 

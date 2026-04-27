@@ -31,6 +31,10 @@ inline int get_XPND_DIR(int cell) {
   return ((cell & 0xffff) >> XPND_DIR_SHIFT);
 }
 
+const int WALL_DIST_SHIFT = 3;
+inline int get_WALL_DIR(int cell)  { return cell & DIR_MASK; }
+inline int get_WALL_DIST(int cell) { return (cell >> WALL_DIST_SHIFT) & 0x1FFF; }
+
 struct PairHash {
   template <typename T1, typename T2>
   std::size_t operator()(const std::pair<T1, T2> &p) const {

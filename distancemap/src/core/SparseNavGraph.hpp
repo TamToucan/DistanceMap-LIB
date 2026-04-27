@@ -59,6 +59,8 @@ public:
       abstractFlowGrids; // levelIdx -> distance map storing direction to
                          // nearest abstractNode
 
+  int medianEdgeCost;
+
 public:
   SparseNavGraph();
   ~SparseNavGraph() = default;
@@ -70,10 +72,6 @@ public:
   int getNodeZone(int nodeIdx) const;
   const std::vector<int> &getZoneNodes(int zoneId) const;
   const std::vector<int> &getZoneEdges(int zoneId) const;
-
-  // Returns the median cost of all non-dead-end edges (path length in tiles).
-  // Returns 0 if edgeCosts is empty or all edges are dead-ends.
-  int computeMedianEdgeCost() const;
 
   // Routing methods
   std::vector<int>
