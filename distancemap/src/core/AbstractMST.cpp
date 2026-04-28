@@ -25,6 +25,7 @@ AbstractMST::AbstractMST() {}
 
 AbstractMST::~AbstractMST() {}
 
+namespace {
 // Union-Find (Disjoint Set) structure for Kruskal's algorithm.
 struct UnionFind {
   std::vector<int> parent;
@@ -39,6 +40,7 @@ struct UnionFind {
   }
   void unite(int x, int y) { parent[find(x)] = find(y); }
 };
+} // namespace
 
 // Dijkstra's algorithm: given a starting base node, compute the shortest path
 // to all base nodes. Returns the distance vector, predecessor vector, and

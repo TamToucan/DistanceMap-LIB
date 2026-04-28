@@ -4,7 +4,6 @@
 
 #include "DistanceMapDLL.hpp"
 #include "GridToGraph.hpp"
-#include "WallDistanceGrid.hpp"
 
 namespace DistanceMap {
 
@@ -20,7 +19,5 @@ public:
 
 private:
   GridToGraph::Graph m_graph;
-  WallDistanceGrid wallDistGrid;
-  DistanceMap::SightGrid sightGrid;
 };
 } // namespace DistanceMap

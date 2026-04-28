@@ -20,6 +20,8 @@ set(DMAP_SOURCES
     "SparseNavGraph.hpp"
     "WallDistanceGrid.cpp"
     "WallDistanceGrid.hpp"
+    "RoomDetection.cpp"
+    "RoomDetection.hpp"
 )
 
 # Define Static Library

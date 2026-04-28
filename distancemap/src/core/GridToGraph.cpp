@@ -21,6 +21,7 @@
 #include "AbstractMST.hpp"
 #include "Debug.h"
 #include "GridTypes.hpp"
+#include "RoomDetection.hpp"
 #include "TGA.hpp"
 #include "WallDistanceGrid.hpp"
 #include "ZSThinning.hpp"
@@ -3234,6 +3235,9 @@ Graph makeGraph(const Grid &floorGrid) {
   LOG_INFO("==ABSTRACT GRAPH CONNECTIVITY");
   Routing::buildAbstractConnectivity(graph.routingGraph, graph.abstractLevels,
                                      graph.infoGrid, graph.baseNodes);
+
+  LOG_INFO("==ROOM DETECTION");
+  graph.roomMap = DistanceMap::makeRoomMap(graph.infoGrid, graph.wallDistanceGrid);
 
   LOG_INFO("## ======= GRAPH MADE =====");
   debugDump(graph);

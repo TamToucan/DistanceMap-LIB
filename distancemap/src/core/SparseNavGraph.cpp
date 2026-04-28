@@ -1,6 +1,7 @@
 #include "SparseNavGraph.hpp"
 
 #include <algorithm>
+#include <climits>
 #include <queue>
 #include <chrono>
 

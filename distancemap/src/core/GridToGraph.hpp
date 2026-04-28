@@ -9,6 +9,7 @@
 #include "DistanceMapDLL.hpp"
 #include "FlowField.hpp"
 #include "GridTypes.hpp"
+#include "RoomDetection.hpp"
 #include "SparseNavGraph.hpp"
 #include "WallDistanceGrid.hpp"
 
@@ -142,6 +143,7 @@ struct Graph {
   std::vector<AbstractLevel> abstractLevels;
   WallDistanceGrid wallDistanceGrid;
   SightGrid sightGrid;
+  RoomMap roomMap;
 };
 
 ////////////////////////////////////////////////////////////////////////////////
