@@ -6,11 +6,14 @@
 
 namespace DistanceMap {
 
-const int MIN_SEED_DIST  = 3;  ///< min wallDist to qualify as a room-center seed (≥7-tile open diameter)
-const int MIN_GATE_DIST  = 2;  ///< wallDist threshold for a "wide" boundary cell pair
-const int MIN_GATE_WIDTH = 3;  ///< min wide-gate cell pairs needed to trigger a region merge
-const int MIN_AREA       = 50; ///< min floor cells for a region to survive as a room
-const int ROOM_NONE      = -1; ///< sentinel: cell is unassigned (corridor or wall)
+const int ROOM_NONE = -1; ///< sentinel: cell is unassigned (corridor or wall)
+
+struct RoomParams {
+    int minSeedDist  = 3;  ///< min wallDist to qualify as a room-center seed (≥7-tile open diameter)
+    int minGateDist  = 2;  ///< wallDist threshold for a "wide" boundary cell pair
+    int minGateWidth = 3;  ///< min wide-gate cell pairs needed to trigger a region merge
+    int minArea      = 30; ///< min floor cells for a region to survive as a room
+};
 
 /**
  * @brief Statistics for a single detected room region.
@@ -47,6 +50,7 @@ struct RoomMap {
  * @return          RoomMap with labels and per-room statistics.
  */
 RoomMap makeRoomMap(const GridType::Grid &infoGrid,
-                    const WallDistanceGrid &wallDist);
+                    const WallDistanceGrid &wallDist,
+                    const RoomParams &params = RoomParams{});
 
 } // namespace DistanceMap

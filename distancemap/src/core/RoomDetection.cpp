@@ -44,7 +44,8 @@ struct IntPairHash {
 // ---- makeRoomMap ------------------------------------------------------------
 
 RoomMap makeRoomMap(const GridType::Grid &/*infoGrid*/,
-                    const WallDistanceGrid &wallDist) {
+                    const WallDistanceGrid &wallDist,
+                    const RoomParams &params) {
     const int H = wallDist.height;
     const int W = wallDist.width;
 
@@ -69,7 +70,7 @@ RoomMap makeRoomMap(const GridType::Grid &/*infoGrid*/,
     for (int y = 0; y < H; ++y) {
         for (int x = 0; x < W; ++x) {
             int d = wallDist.get(x, y);
-            if (d < MIN_SEED_DIST) continue;
+            if (d < params.minSeedDist) continue;
 
             bool isMax = true;
             for (int k = 0; k < 8 && isMax; ++k) {
@@ -114,11 +115,41 @@ RoomMap makeRoomMap(const GridType::Grid &/*infoGrid*/,
             if (nx < 0 || nx >= W || ny < 0 || ny >= H) continue;
             if (wallDist.get(nx, ny) == 0) continue;          // wall
             if (result.labels[ny][nx] != ROOM_NONE) continue; // taken
+
+            // Gate-width check: count valid parallel crossings at this edge.
+            // Each crossing is a (source, dest) pair offset perpendicularly.
+            // Expansion direction (dx4[k], dy4[k]); perpendicular is (-dy4[k], dx4[k]).
+            // Both the dest side AND source side must be floor to count as a crossing.
+            // This avoids counting far-side room cells as part of the gate width.
+            int pw = -dy4[k], ph = dx4[k];
+            int gateWidth = 1; // the (x,y)->(nx,ny) crossing itself always counts
+            for (int s = 1; s < params.minGateWidth && gateWidth < params.minGateWidth; ++s) {
+                int cx = nx + s*pw, cy = ny + s*ph; // dest side offset
+                int sx = x  + s*pw, sy = y  + s*ph; // source side offset
+                if (cx < 0 || cx >= W || cy < 0 || cy >= H) break;
+                if (sx < 0 || sx >= W || sy < 0 || sy >= H) break;
+                if (wallDist.get(cx, cy) == 0 || wallDist.get(sx, sy) == 0) break;
+                ++gateWidth;
+            }
+            for (int s = 1; s < params.minGateWidth && gateWidth < params.minGateWidth; ++s) {
+                int cx = nx - s*pw, cy = ny - s*ph;
+                int sx = x  - s*pw, sy = y  - s*ph;
+                if (cx < 0 || cx >= W || cy < 0 || cy >= H) break;
+                if (sx < 0 || sx >= W || sy < 0 || sy >= H) break;
+                if (wallDist.get(cx, cy) == 0 || wallDist.get(sx, sy) == 0) break;
+                ++gateWidth;
+            }
+            if (gateWidth < params.minGateWidth) continue;
+
             pq.emplace(wallDist.get(nx, ny), nx, ny, rid);
+            LOG_DEBUG("ph3: xy; " << nx <<","<< ny << " r1: " << rid << " wallDist: "
+                << static_cast<int>(wallDist.get(nx, ny)));
         }
     }
 
     // ---- Phase 4: Boundary classification -----------------------------------
+    // gateWidth counts unique r1-side CELLS adjacent to r2 — not edges — so a
+    // corner cell touching r2 in two directions still counts as one gate cell.
 
     struct BndInfo { int gateWidth = 0; int maxGateDist = 0; };
     std::unordered_map<std::pair<int,int>, BndInfo, IntPairHash> boundaries;
@@ -127,17 +158,29 @@ RoomMap makeRoomMap(const GridType::Grid &/*infoGrid*/,
         for (int x = 0; x < W; ++x) {
             int r1 = result.labels[y][x];
             if (r1 == ROOM_NONE) continue;
+            LOG_DEBUG("ph4: xy; " << x <<","<< y << " r1: " << r1);
+
+            int qualR2[4]; int nQual = 0;
             for (int k = 0; k < 4; ++k) {
                 int nx = x + dx4[k], ny = y + dy4[k];
                 if (nx < 0 || nx >= W || ny < 0 || ny >= H) continue;
                 int r2 = result.labels[ny][nx];
-                if (r2 == ROOM_NONE || r2 == r1) continue;
-                auto key = std::make_pair(std::min(r1,r2), std::max(r1,r2));
+                if (r2 == ROOM_NONE || r2 <= r1) continue;
                 int gateDist = std::max(wallDist.get(x,y), wallDist.get(nx,ny));
-                auto &bnd = boundaries[key];
+                auto &bnd = boundaries[{r1, r2}];
                 bnd.maxGateDist = std::max(bnd.maxGateDist, gateDist);
-                if (gateDist >= MIN_GATE_DIST)
-                    bnd.gateWidth++;
+                LOG_DEBUG("  k=" << k << " xy: " << nx <<","<< ny << " r2: " << r2
+                    << " gateDist: " << gateDist << " maxGate: " << bnd.maxGateDist);
+                if (gateDist >= params.minGateDist) {
+                    bool found = false;
+                    for (int i = 0; i < nQual; ++i) if (qualR2[i] == r2) { found = true; break; }
+                    if (!found) qualR2[nQual++] = r2;
+                }
+            }
+            for (int i = 0; i < nQual; ++i) {
+                auto &bnd = boundaries[{r1, qualR2[i]}];
+                ++bnd.gateWidth;
+                LOG_DEBUG("  cell adj r2=" << qualR2[i] << " => gateWidth: " << bnd.gateWidth);
             }
         }
     }
@@ -146,8 +189,11 @@ RoomMap makeRoomMap(const GridType::Grid &/*infoGrid*/,
 
     UnionFind uf(regionCount);
     for (auto &[key, bnd] : boundaries) {
-        if (bnd.gateWidth >= MIN_GATE_WIDTH)
+        if (bnd.gateWidth >= params.minGateWidth) {
+            LOG_DEBUG("UNITE: r1,r2 (" << key.first << ", " << key.second << ")"
+                << " maxGate: " << bnd.maxGateDist << " gateWidth: " << bnd.gateWidth);
             uf.unite(key.first, key.second);
+        }
     }
 
     // Remap labels to roots
@@ -185,7 +231,7 @@ RoomMap makeRoomMap(const GridType::Grid &/*infoGrid*/,
 
     std::vector<bool> discard(compactCount, false);
     for (int i = 0; i < compactCount; ++i)
-        if (area[i] < MIN_AREA) discard[i] = true;
+        if (area[i] < params.minArea) discard[i] = true;
 
     for (int y = 0; y < H; ++y)
         for (int x = 0; x < W; ++x)
@@ -279,8 +325,28 @@ RoomMap makeRoomMap(const GridType::Grid &/*infoGrid*/,
             << " maxDist=" << r.maxWallDist
             << " size=" << r.approxWidth << "x" << r.approxHeight
             << " neighbours=" << r.neighborRoomIds.size());
-    }
 
+    }
+    LOG_DEBUG("## Rooms Map");
+    for (int y = 0; y < result.height; ++y) {
+      for (int x = 0; x < result.width; ++x) {
+        if (wallDist.get(x,y) == 0) {
+          LOG_DEBUG_CONT("#");
+        } else {
+          int lbl = result.labels[y][x];
+          if (lbl == ROOM_NONE) {
+            LOG_DEBUG_CONT(".");
+          } else if (lbl < 10) {
+            LOG_DEBUG_CONT(static_cast<char>('0' + lbl));
+          } else if (lbl < 36) {
+            LOG_DEBUG_CONT(static_cast<char>('a' + (lbl - 10)));
+          } else {
+            LOG_DEBUG_CONT(" ");
+          }
+        }
+      }
+      LOG_DEBUG("");
+    }
     return result;
 }
 

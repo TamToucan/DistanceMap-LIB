@@ -34,7 +34,7 @@ WallDistanceGrid makeWallDistanceGrid(const GridType::Grid &grid) {
   // Add all wall cells to the queue and initialise their distances to 0
   for (int r = 0; r < rows; ++r) {
     for (int c = 0; c < cols; ++c) {
-      if (grid[r][c] & GridType::WALL) {
+      if (grid[r][c] != 0) {
         dist[r * cols + c] = 0;
         bfsQueue.push({r, c});
       }
