@@ -1,5 +1,16 @@
 #pragma once
 
+/**
+ * @file RoomDetection.hpp
+ * @brief Detects "room" regions (wide open spaces) in a navigation graph.
+ * @details Uses the wall-distance grid to find seed cells with large open
+ * radius, grows regions from each seed, then merges regions sharing wide
+ * boundary gates and discards regions smaller than a minimum area. Output is
+ * a RoomMap of per-cell room ids plus a vector of RoomRegion summaries
+ * (centre, area, dimensions, neighbour room ids). Corridors and walls are
+ * left as ROOM_NONE.
+ */
+
 #include "GridTypes.hpp"
 #include "WallDistanceGrid.hpp"
 #include <vector>
@@ -8,6 +19,10 @@ namespace DistanceMap {
 
 const int ROOM_NONE = -1; ///< sentinel: cell is unassigned (corridor or wall)
 
+/**
+ * @struct RoomParams
+ * @brief Tuning thresholds for room detection.
+ */
 struct RoomParams {
     int minSeedDist  = 3;  ///< min wallDist to qualify as a room-center seed (≥7-tile open diameter)
     int minGateDist  = 2;  ///< wallDist threshold for a "wide" boundary cell pair

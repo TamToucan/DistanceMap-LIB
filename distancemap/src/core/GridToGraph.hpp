@@ -1,6 +1,24 @@
 #ifndef DISTANCEMAP_SRC_GRIDTOGRAPH_HPP_
 #define DISTANCEMAP_SRC_GRIDTOGRAPH_HPP_
 
+/**
+ * @file GridToGraph.hpp
+ * @brief Pipeline that converts a 2D occupancy grid into a hierarchical
+ * navigation Graph.
+ * @details See the long-form ASCII comment below for the full algorithm.
+ * Public surface:
+ *   - makeGraph(floorGrid) — assemble the Graph (entry point).
+ *   - gridToFloorGrid(grid) — convert an arbitrary int grid to the
+ *     PATH/EMPTY representation makeGraph() expects.
+ *   - readGridFromFile(path) — load a grid from disk (debug/test util).
+ *   - struct Graph — holds all derived data: thinned infoGrid, baseNodes /
+ *     baseEdges / deadEnds, AbstractLevels (zones, subgrids, abstract
+ *     edges), routing graph, wall-distance, sight, and room maps.
+ *   - struct AbstractLevel, ZoneBridgeEdge — per-level abstract graph
+ *     pieces.
+ *   - PathCostMap — distance lookup between any two baseNodes.
+ */
+
 #include <string>
 #include <unordered_map>
 #include <utility>
@@ -86,8 +104,12 @@
 namespace DistanceMap {
 namespace GridToGraph {
 
+/// Convert a raw 0=floor/1=wall grid into the EMPTY/PATH form makeGraph wants
+/// (floor cells become PATH=1, walls become EMPTY=0).
 DISTANCEMAP_API std::vector<std::vector<int>>
 gridToFloorGrid(const std::vector<std::vector<int>> &grid);
+/// Load a grid from a text file (rows of 0/1 separated by whitespace).
+/// Used by tests and the offline debug tooling.
 DISTANCEMAP_API std::vector<std::vector<int>>
 readGridFromFile(const std::string &filename);
 
@@ -132,6 +154,22 @@ struct AbstractLevel {
 // the first node to the second node.
 using PathCostMap = std::unordered_map<std::pair<int, int>, int, PairHash>;
 
+/**
+ * @struct Graph
+ * @brief Full hierarchical navigation graph for one level.
+ * @details Built by makeGraph(). Members:
+ *   - infoGrid:        per-cell packed info (NODE/DEND/EDGE/XPND/etc).
+ *   - baseGraph:       adjacency over baseNodes (excludes dead ends).
+ *   - pathCostMap:     path length lookup between any two baseNode indices.
+ *   - routingGraph:    SparseNavGraph used for A* + zone routing.
+ *   - baseEdges:       thin-skeleton edges (with full path lists).
+ *   - baseNodes:       branch/junction cells in the thinned skeleton.
+ *   - deadEnds:        dead-end cells.
+ *   - abstractLevels:  successive coarser hierarchies of nodes/edges/zones.
+ *   - wallDistanceGrid:BFS distance to nearest wall, per cell.
+ *   - sightGrid:       packed N/E/S/W open distances per cell.
+ *   - roomMap:         per-cell room labels + room statistics.
+ */
 struct Graph {
   GridType::Grid infoGrid;
   BaseGraph baseGraph;
@@ -147,9 +185,9 @@ struct Graph {
 };
 
 ////////////////////////////////////////////////////////////////////////////////
-//
-// Floor must = PATH on input i.e. walkable, WALLS = EMPTY
-//
+/// Run the full grid->graph pipeline.
+/// @param floorGrid PATH=walkable, EMPTY=wall (use gridToFloorGrid to convert).
+/// @return Fully populated Graph (thinning + base/abstract + routing + flow).
 DISTANCEMAP_API Graph makeGraph(const GridType::Grid &floorGrid);
 
 } // namespace GridToGraph

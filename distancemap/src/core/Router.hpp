@@ -1,5 +1,15 @@
 #pragma once
 
+/**
+ * @file Router.hpp
+ * @brief Lightweight scratch types passed into SparseNavGraph routing calls.
+ * @details RouteCtx caches the last-computed bidirectional A* route so repeat
+ * queries can re-use partial results. Info carries the basic grid sizing each
+ * Navigator implementation needs at construction time. Navigator-specific
+ * runtime state (stuck timers, committed waypoints) lives in DistanceMap::NavCtx
+ * in the CuteLott repo, not here.
+ */
+
 #include <vector>
 
 namespace DistanceMap {

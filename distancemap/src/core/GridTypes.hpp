@@ -1,6 +1,21 @@
 #ifndef DISTANCEMAP_SRC_GRIDTYPES_HPP_
 #define DISTANCEMAP_SRC_GRIDTYPES_HPP_
 
+/**
+ * @file GridTypes.hpp
+ * @brief Common grid types and packed-cell encodings used across DistanceMap.
+ * @details Defines:
+ *   - Primitive aliases: Grid, Point, Path, Vec2.
+ *   - infoGrid bit flags (NODE/DEND/EDGE/XPND/BOUNDARY/WALL) and the
+ *     accessor helpers for the packed fields.
+ *   - 8-neighbour direction tables (directions8, reverseDirIndex,
+ *     searchDirs4, dir4todir8Index).
+ *   - Graph data structures: Edge, AbstractNode, AbstractEdge,
+ *     BaseGraphInfo, BaseGraph.
+ *   - Per-cell ZoneGrid (GridPointInfo) and per-zone metadata (ZoneInfo,
+ *     BoundaryInfo, BoundaryCells).
+ */
+
 #include <cstdint>
 #include <limits>
 #include <unordered_map>
@@ -35,6 +50,7 @@ const int WALL_DIST_SHIFT = 3;
 inline int get_WALL_DIR(int cell)  { return cell & DIR_MASK; }
 inline int get_WALL_DIST(int cell) { return (cell >> WALL_DIST_SHIFT) & 0x1FFF; }
 
+/// Hash functor for std::pair — used as key in unordered_map of cell pairs.
 struct PairHash {
   template <typename T1, typename T2>
   std::size_t operator()(const std::pair<T1, T2> &p) const {
@@ -42,10 +58,14 @@ struct PairHash {
   }
 };
 
+/// 2D row-major integer grid: grid[y][x].
 using Grid = std::vector<std::vector<int>>;
+/// 2D integer cell position (x, y).
 using Point = std::pair<int, int>;
+/// Ordered list of cells along a path.
 using Path = std::vector<Point>;
 
+/// Simple 2D float vector (positions/directions in world space).
 struct Vec2 {
   float x, y;
   Vec2() : x(0), y(0) {}
@@ -86,18 +106,23 @@ const static std::vector<int> dir4todir8Index = {
     3, // Bottom-left => Down-Left
 };
 
+/// Base-graph edge: connects two baseNodes (or a baseNode and a deadEnd) and
+/// carries the full thinned-skeleton path between them.
 struct Edge {
   int from, to;        // Indices of connected nodes or deadEnds
   bool toDeadEnd;      // Whether `to` refers to a deadEnd
   GridType::Path path; // Path between the points
 };
 
+/// Cluster of nearby baseNodes treated as one node in an AbstractLevel.
 struct AbstractNode {
   std::vector<int> baseNodes;   // Indices of nodes in the cluster
   GridType::Point center{0, 0}; // Geometric center (+= used so init to 0)
   int baseCenterNode{-1};       // index of closest baseNode
 };
 
+/// Edge between two AbstractNodes plus the underlying base-graph path that
+/// realises it (path is cell-by-cell; nodePath is the baseNode sequence).
 struct AbstractEdge {
   int from, to; // Indices of connected abstract nodes
   GridType::Path path;
@@ -110,6 +135,7 @@ struct AbstractEdge {
   }
 };
 
+/// One adjacency record in the BaseGraph adjacency list.
 struct BaseGraphInfo {
   int neighbor;  // Neighboring base node index.
   int edgeIndex; // Index into the edges vector.
@@ -123,11 +149,15 @@ struct BaseGraphInfo {
 // It excludes dead ends
 using BaseGraph = std::vector<std::vector<BaseGraphInfo>>;
 
+/// Per-cell info stored in a ZoneGrid: which AbstractNode this cell belongs
+/// to (Voronoi-style assignment) and its BFS distance to that node's centre.
 struct GridPointInfo {
   int16_t closestAbstractNodeIdx = -1;
   int16_t distanceToAbstractNode = std::numeric_limits<short int>::max();
 };
 
+/// Cell on a zone boundary plus the direction (directions8 index) that
+/// crosses into the neighbouring zone.
 struct BoundaryInfo {
   GridType::Point sink;
   int exitDirIdx = -1;
@@ -174,6 +204,8 @@ using BoundaryCells = std::unordered_set<BoundaryInfo, BoundaryInfoSinkHash,
 // crossing into that neighbor zone (segments parallel crossings).
 using BoundaryCellMap = std::unordered_map<int, std::vector<BoundaryCells>>;
 
+/// Aggregated info for a single zone: its base graph slice and its connections
+/// to neighbouring zones (via boundary cells).
 struct ZoneInfo {
   std::vector<int>
       baseNodeIdxs; // List of all the indexes of the base nodes in this zone
@@ -193,8 +225,12 @@ struct ZoneInfo {
 // 2D grid of information for each cell to aid navigation
 using ZoneGrid = std::vector<std::vector<GridPointInfo>>;
 
+/// Run BFS over the base graph and return a per-baseNode component id.
+/// Used to detect disconnected components in a level.
 std::vector<int> checkConnectivity(const BaseGraph &graph, int numBaseNodes);
 
+/// Build the BaseGraph adjacency list from the flat Edge list.
+/// Records both directions of each edge (forward = true for FROM->TO).
 BaseGraph buildBaseGraph(const std::vector<Edge> &edges, int numBaseNodes);
 
 } // namespace GridType

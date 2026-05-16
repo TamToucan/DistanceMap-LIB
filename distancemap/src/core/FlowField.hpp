@@ -1,6 +1,18 @@
 #ifndef DISTANCEMAP_SRC_FLOWFIELD_HPP_
 #define DISTANCEMAP_SRC_FLOWFIELD_HPP_
 
+/**
+ * @file FlowField.hpp
+ * @brief Per-zone flow-field grids for cheap "head toward neighbour" navigation.
+ * @details For each AbstractLevel zone, a SubGrid is built covering the zone's
+ * bounding rectangle. The SubGrid stores one flow field per adjacent zone:
+ * each cell encodes the direction (one of directions8) an agent should step
+ * to reach a sink (boundary) into that neighbour, plus the path cost. Cells
+ * on the zone boundary have SINK_BIT set; their direction points across into
+ * the next zone. Build the full set with generateFlowGrids(graph) after a
+ * Graph has been assembled.
+ */
+
 #include <cstdint>
 
 #include "Debug.h"
@@ -17,9 +29,19 @@ struct Graph;
 namespace DistanceMap {
 namespace FlowField {
 
+/// Sentinel for "no direction encoded" in a flow-field cell.
 constexpr uint8_t NO_DIR = 127;
+/// Bit set on cells that sit on a zone boundary (direction crosses into neighbour).
 constexpr uint8_t SINK_BIT = 0x80;
 
+/**
+ * @struct SubGrid
+ * @brief One zone's bounding-box flow-field data.
+ * @details Holds the local occupancy grid, one cost+direction field per
+ * adjacent zone, and the list of floor cells. Coordinates come in two
+ * flavours: "local" (zero-based within this SubGrid) and "map" (offset by
+ * offsetX/Y).
+ */
 struct SubGrid {
   // Flat grid array to be used as the input for generateFlowFieldDial.
   // I think this could be cleared after generateFlowFieldDial is done.
@@ -79,6 +101,11 @@ struct SubGrid {
   }
 };
 
+/**
+ * @brief Build all SubGrids and per-neighbour flow fields for a Graph.
+ * @details Populates each AbstractLevel's subGrids list. Must be called after
+ * zones + boundary cells are computed on the graph.
+ */
 void generateFlowGrids(GridToGraph::Graph &graph);
 
 } // namespace FlowField

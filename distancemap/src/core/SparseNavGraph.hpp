@@ -1,6 +1,16 @@
 #ifndef SPARSE_NAV_GRAPH_HPP
 #define SPARSE_NAV_GRAPH_HPP
 
+/**
+ * @file SparseNavGraph.hpp
+ * @brief Sparse base+abstract graph used for A* routing.
+ * @details Stores adjacency in compact "node -> [(other, edgeIdx), ...]" form,
+ * plus an edge-grid that maps any cell to the nearest base edge (for snapping
+ * agent positions). Supports same-zone, adjacent-zone and distant (multi-zone
+ * via boundary waypoints) queries. Build via buildSparseGraph(); attach
+ * abstract level connectivity with buildAbstractConnectivity().
+ */
+
 #include <optional>
 #include <unordered_map>
 #include <unordered_set>
@@ -24,6 +34,10 @@ struct AbstractLevel;
 namespace DistanceMap {
 namespace Routing {
 
+/**
+ * @class SparseNavGraph
+ * @brief Compact adjacency + grid lookup used by A* and zone-aware routing.
+ */
 class DISTANCEMAP_API SparseNavGraph {
 public:
   // Base graph adjacency (not deadEnds)
@@ -65,15 +79,36 @@ public:
   SparseNavGraph();
   ~SparseNavGraph() = default;
 
+  /// Returns the edge index connecting n1 and n2, or -1 if none.
   int getEdgeFromNodes(int n1, int n2) const;
+  /// Returns the edge index for the given dead-end index, or -1.
   int getEdgeFromDead(int deadIdx) const;
 
   // Helper methods
+  /// Returns the zoneId a base node belongs to.
   int getNodeZone(int nodeIdx) const;
+  /// Returns the list of baseNode indices that live inside the given zone.
   const std::vector<int> &getZoneNodes(int zoneId) const;
+  /// Returns the list of baseEdge indices that live inside the given zone.
   const std::vector<int> &getZoneEdges(int zoneId) const;
 
   // Routing methods
+  /**
+   * @brief Compute a route from a source (node or edge) to a target node.
+   * @param ctx               Per-agent route cache (last route / route-type
+   *                          fingerprint) reused across calls.
+   * @param sourceNodeIdx     Pass either this or sourceEdgeIdx.
+   * @param sourceEdgeIdx     Pass either this or sourceNodeIdx.
+   * @param targetNodeIdx     Destination base node.
+   * @param sourceZoneId      Zone of the source (precomputed by caller).
+   * @param targetZoneId      Zone of the target (precomputed by caller).
+   * @param zoneRelationship  -1 = same zone, >=0 = adjacent (index into
+   *                          source zone's adjacency list), -2 = distant
+   *                          (route via boundaries).
+   * @param costBias          Adds randomness to edge cost for path variety.
+   * @param maxPerturbation   Caps the randomness added by costBias.
+   * @return Path as a list of base-graph node indices (empty on failure).
+   */
   std::vector<int>
   findRoute(Router::RouteCtx *ctx, const std::vector<GridType::ZoneInfo> &zones,
             const std::vector<GridType::AbstractEdge> &abstractEdges,
@@ -87,6 +122,8 @@ public:
       const;
 
 private:
+  /// Bidirectional A* over the sparse graph, restricted to allowed sets.
+  /// Source and target can each be either a node or an edge.
   std::vector<int> bidirectionalAStarFlexible(
       std::optional<int> sourceNodeIdx, std::optional<int> sourceEdgeIdx,
       std::optional<int> targetNodeIdx, std::optional<int> targetEdgeIdx,
@@ -95,11 +132,14 @@ private:
       int costBias = 0,
       int maxPerturbation = 15) const;
 
+  /// Turn a list of edge indices into the corresponding node-index path,
+  /// handling the special case where the start is an edge midpoint.
   std::vector<int>
   convertEdgesToNodePath(const std::vector<int> &edgePath,
                          std::optional<int> sourceEdgeIdx,
                          std::optional<int> sourceNodeIdx) const;
 
+  /// Same-zone node->node A*, restricted to the zone's nodes/edges.
   std::vector<int> findZoneNodeToNodePath(Router::RouteCtx *ctx,
                                           const std::vector<int> &zoneBases,
                                           const std::vector<int> &zoneEdges,
@@ -108,6 +148,7 @@ private:
                                           int costBias = 0,
                                           int maxPerturbation = 15) const;
 
+  /// Same-zone edge->node A*, restricted to the zone's nodes/edges.
   std::vector<int> findZoneEdgeToNodePath(Router::RouteCtx *ctx,
                                           const std::vector<int> &zoneBases,
                                           const std::vector<int> &zoneEdges,
@@ -116,6 +157,7 @@ private:
                                           int costBias = 0,
                                           int maxPerturbation = 15) const;
 
+  /// Shared A* helper that takes pre-built allowed-node/edge sets.
   std::vector<int> findRouteWithAllowedSets(
       Router::RouteCtx *ctx, const std::vector<int> &allowedNodes,
       const std::vector<int> &allowedEdges, std::optional<int> sourceNodeIdx,
@@ -139,17 +181,23 @@ private:
       int costBias,
       int maxPerturbation = 15) const;
 
+  /// BFS over zone adjacency. Returns the sequence of zone ids from source
+  /// to target (inclusive), or empty if unreachable.
   static std::vector<int>
   findZonePathBFS(const std::vector<GridType::ZoneInfo> &zones,
                   int sourceZoneId, int targetZoneId);
 };
 
-// Builder function
+/// Construct the base SparseNavGraph from raw node/edge/grid data.
+/// Populates forward/reverse connections, dead-end map, node->edge mapping,
+/// edge costs, node points, and the edge grid.
 SparseNavGraph buildSparseGraph(const std::vector<GridType::Point> &baseNodes,
                                 const std::vector<GridType::Point> &deadEnds,
                                 const std::vector<GridType::Edge> &baseEdges,
                                 const GridType::Grid &infoGrid);
 
+/// Populate the per-level abstract adjacency and flow grids on an existing
+/// SparseNavGraph. Call after buildSparseGraph().
 void buildAbstractConnectivity(
     SparseNavGraph &graph,
     const std::vector<GridToGraph::AbstractLevel> &abstractLevels,
