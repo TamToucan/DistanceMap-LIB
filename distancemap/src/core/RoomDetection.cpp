@@ -2,7 +2,9 @@
 
 #include "Debug.h"
 
+#include <algorithm>
 #include <climits>
+#include <cmath>
 #include <queue>
 #include <tuple>
 #include <unordered_map>
@@ -348,6 +350,284 @@ RoomMap makeRoomMap(const GridType::Grid &/*infoGrid*/,
       LOG_DEBUG("");
     }
     return result;
+}
+
+// ---- detectCorridors --------------------------------------------------------
+// See SPECIFICATION: specs/systems/corridor_detection.md
+
+void detectCorridors(RoomMap &roomMap,
+                     const std::vector<GridType::Point> &baseNodes,
+                     const std::vector<GridType::Edge> &baseEdges,
+                     const WallDistanceGrid &wallDist) {
+    roomMap.corridors.clear();
+    roomMap.corridorLabels.assign(roomMap.height,
+                                  std::vector<int>(roomMap.width, ROOM_NONE));
+    const int N = static_cast<int>(baseNodes.size());
+    if (N == 0 || roomMap.rooms.empty()) return;
+
+    auto labelAt = [&](const GridType::Point &p) -> int {
+        int x = p.first, y = p.second;
+        if (y < 0 || y >= roomMap.height || x < 0 || x >= roomMap.width)
+            return ROOM_NONE;
+        return roomMap.labels[y][x];
+    };
+
+    // Classify each edge by the room labels at its two path-cell ends.
+    // Room attachment is keyed on path-end CELL labels (not baseNode cells):
+    // rooms are open blobs and the skeleton often dead-ends *inside* a room, so
+    // a dead-end edge can legitimately link two rooms across the ROOM_NONE gap.
+    //   room <-> room (different) : direct corridor (whole edge, dead or not)
+    //   room <-> ROOM_NONE        : port (only non-dead: the ROOM_NONE end is a
+    //                               chainable baseNode)
+    //   ROOM_NONE <-> ROOM_NONE   : corridor-corridor adjacency (non-dead)
+    std::vector<std::vector<std::pair<int,int>>> adj(N); // (neighborNode, edgeIdx)
+    struct Port { int corridorNode; int room; int edgeIdx; int roomNode; };
+    std::vector<Port> ports;
+    std::vector<int> directEdges; // edge indices linking two different rooms
+
+    for (int e = 0; e < static_cast<int>(baseEdges.size()); ++e) {
+        const auto &E = baseEdges[e];
+        if (E.path.empty()) continue;
+        int rF = labelAt(E.path.front());
+        int rB = labelAt(E.path.back());
+        bool dead = E.toDeadEnd;
+
+        if (rF != ROOM_NONE && rB != ROOM_NONE) {
+            if (rF != rB) directEdges.push_back(e); // else intra-room: ignore
+        } else if (rF != ROOM_NONE && rB == ROOM_NONE) {
+            if (!dead && E.to >= 0 && E.to < N)
+                ports.push_back({E.to, rF, e, E.from}); // mouth into rF at front
+        } else if (rF == ROOM_NONE && rB != ROOM_NONE) {
+            if (!dead && E.from >= 0 && E.from < N)
+                ports.push_back({E.from, rB, e, E.to});
+        } else { // both ROOM_NONE
+            if (!dead && E.from >= 0 && E.from < N && E.to >= 0 && E.to < N) {
+                adj[E.from].push_back({E.to, e});
+                adj[E.to].push_back({E.from, e});
+            }
+        }
+    }
+
+    // Shortest corridor-node path (by node count) over adj, deterministic.
+    auto bfsPath = [&](int src, int dst) -> std::vector<int> {
+        if (src == dst) return {src};
+        std::vector<int> prev(N, -1);
+        std::vector<char> seen(N, 0);
+        std::queue<int> q;
+        q.push(src); seen[src] = 1;
+        while (!q.empty()) {
+            int c = q.front(); q.pop();
+            if (c == dst) break;
+            for (auto &pr : adj[c])
+                if (!seen[pr.first]) { seen[pr.first] = 1; prev[pr.first] = c; q.push(pr.first); }
+        }
+        if (!seen[dst]) return {};
+        std::vector<int> seq;
+        for (int c = dst; c != -1; c = prev[c]) seq.push_back(c);
+        std::reverse(seq.begin(), seq.end());
+        return seq;
+    };
+
+    auto edgeBetween = [&](int a, int b) -> int {
+        for (auto &pr : adj[a]) if (pr.first == b) return pr.second;
+        return -1;
+    };
+
+    // Build an ordered centerline cell list from a baseNode sequence and the
+    // edges connecting consecutive nodes. Consecutive duplicate cells dropped.
+    auto buildCenterline = [&](const std::vector<int> &seq,
+                               const std::vector<int> &edgeSeq) -> GridType::Path {
+        GridType::Path cl;
+        auto pushCell = [&](const GridType::Point &p) {
+            if (cl.empty() || cl.back() != p) cl.push_back(p);
+        };
+        if (seq.empty()) return cl;
+        pushCell(baseNodes[seq[0]]);
+        for (size_t k = 0; k + 1 < seq.size(); ++k) {
+            int e = edgeSeq[k];
+            if (e >= 0) {
+                const auto &E = baseEdges[e];
+                if (E.from == seq[k])
+                    for (auto &c : E.path) pushCell(c);
+                else
+                    for (auto it = E.path.rbegin(); it != E.path.rend(); ++it) pushCell(*it);
+            }
+            pushCell(baseNodes[seq[k + 1]]);
+        }
+        return cl;
+    };
+
+    // Fill length/wiggle/thickness for a corridor from its centerline.
+    auto computeStats = [&](Corridor &c) {
+        const GridType::Path &cl = c.centerline;
+        c.length = static_cast<int>(cl.size());
+        if (cl.empty()) return;
+        c.start = cl.front();
+        c.end   = cl.back();
+
+        // Wiggle: accumulated absolute turn angle / length.
+        float totalTurn = 0.0f;
+        bool haveDir = false;
+        float pdx = 0.0f, pdy = 0.0f;
+        for (size_t i = 1; i < cl.size(); ++i) {
+            float dx = static_cast<float>(cl[i].first  - cl[i-1].first);
+            float dy = static_cast<float>(cl[i].second - cl[i-1].second);
+            if (dx == 0.0f && dy == 0.0f) continue;
+            float len = std::sqrt(dx*dx + dy*dy);
+            dx /= len; dy /= len;
+            if (haveDir) {
+                float dot = pdx*dx + pdy*dy;
+                float cross = pdx*dy - pdy*dx;
+                totalTurn += std::fabs(std::atan2(cross, dot));
+            }
+            pdx = dx; pdy = dy; haveDir = true;
+        }
+        c.wiggle = c.length > 0 ? totalTurn / static_cast<float>(c.length) : 0.0f;
+
+        // Thickness: diameter = 2*wallDist+1 per cell, bucketed.
+        int tight = 0, normal = 0, wide = 0;
+        int minD = INT_MAX, maxD = 0;
+        long sum = 0;
+        for (auto &p : cl) {
+            int diam = 2 * static_cast<int>(wallDist.get(p.first, p.second)) + 1;
+            if (diam <= CORRIDOR_DIAM_TIGHT_MAX) ++tight;
+            else if (diam <= CORRIDOR_DIAM_NORMAL_MAX) ++normal;
+            else ++wide;
+            minD = std::min(minD, diam);
+            maxD = std::max(maxD, diam);
+            sum += diam;
+        }
+        int tot = c.length;
+        c.thickness.fracTight  = static_cast<float>(tight)  / tot;
+        c.thickness.fracNormal = static_cast<float>(normal) / tot;
+        c.thickness.fracWide   = static_cast<float>(wide)   / tot;
+        c.thickness.avgDiameter = static_cast<int>(sum / tot);
+        c.thickness.minDiameter = minD;
+        c.thickness.maxDiameter = maxD;
+    };
+
+    // Index range [first, last] of the ROOM_NONE cells in a path, or {-1,-1} if
+    // none (rooms physically touch). This is the corridor span between rooms.
+    auto corridorSpan = [&](const GridType::Path &p) -> std::pair<int,int> {
+        int first = -1, last = -1;
+        for (int i = 0; i < static_cast<int>(p.size()); ++i)
+            if (labelAt(p[i]) == ROOM_NONE) { if (first < 0) first = i; last = i; }
+        return {first, last};
+    };
+
+    // Trim leading/trailing room-labeled cells so the centerline (and start/end)
+    // covers just the ROOM_NONE span. Paths with no ROOM_NONE cells are kept.
+    auto trimToCorridorSpan = [&](GridType::Path &cl) {
+        auto [first, last] = corridorSpan(cl);
+        if (first < 0) return;
+        cl = GridType::Path(cl.begin() + first, cl.begin() + last + 1);
+    };
+
+    // Track which corridor-node path each corridor traversed, for crossings.
+    std::vector<std::vector<int>> corridorNodePaths;
+
+    // ---- Enumerate room-pair corridors over port pairs ----------------------
+    const int P = static_cast<int>(ports.size());
+    for (int i = 0; i < P; ++i) {
+        for (int j = i + 1; j < P; ++j) {
+            if (ports[i].room == ports[j].room) continue; // same room: skip
+            std::vector<int> corPath =
+                bfsPath(ports[i].corridorNode, ports[j].corridorNode);
+            if (corPath.empty()) continue; // disconnected networks
+
+            std::vector<int> seq;
+            seq.push_back(ports[i].roomNode);
+            for (int n : corPath) seq.push_back(n);
+            seq.push_back(ports[j].roomNode);
+
+            std::vector<int> edgeSeq;
+            edgeSeq.push_back(ports[i].edgeIdx);
+            for (size_t k = 0; k + 1 < corPath.size(); ++k)
+                edgeSeq.push_back(edgeBetween(corPath[k], corPath[k+1]));
+            edgeSeq.push_back(ports[j].edgeIdx);
+
+            Corridor c;
+            c.id = static_cast<int>(roomMap.corridors.size());
+            c.roomA = ports[i].room;
+            c.roomB = ports[j].room;
+            c.centerline = buildCenterline(seq, edgeSeq);
+            trimToCorridorSpan(c.centerline);
+            computeStats(c);
+            roomMap.corridors.push_back(std::move(c));
+            corridorNodePaths.push_back(std::move(corPath));
+        }
+    }
+
+    // ---- Direct room-to-room skeleton edges (incl. dead-end stubs) ----------
+    // The edge path runs room -> ROOM_NONE gap -> room. Trim to the gap; the
+    // rooms are the labels of the cells flanking the trimmed span.
+    for (int e : directEdges) {
+        const auto &E = baseEdges[e];
+        const int n = static_cast<int>(E.path.size());
+        auto [first, last] = corridorSpan(E.path);
+
+        Corridor c;
+        c.id = static_cast<int>(roomMap.corridors.size());
+        if (first < 0) { // no gap: rooms touch, keep whole edge
+            c.centerline = E.path;
+            c.roomA = labelAt(E.path.front());
+            c.roomB = labelAt(E.path.back());
+        } else {
+            c.centerline = GridType::Path(E.path.begin() + first,
+                                          E.path.begin() + last + 1);
+            // Rooms are the cells flanking the trimmed span.
+            c.roomA = first > 0      ? labelAt(E.path[first - 1]) : labelAt(E.path.front());
+            c.roomB = last + 1 < n   ? labelAt(E.path[last + 1])  : labelAt(E.path.back());
+        }
+        computeStats(c);
+        roomMap.corridors.push_back(std::move(c));
+        corridorNodePaths.push_back({}); // no corridor nodes -> no crossings
+    }
+
+    // ---- Crossings: corridors sharing a junction baseNode -------------------
+    std::unordered_map<int, std::vector<int>> nodeToCorr; // junctionNode -> corridorIds
+    for (size_t ci = 0; ci < corridorNodePaths.size(); ++ci) {
+        for (int node : corridorNodePaths[ci]) {
+            if (static_cast<int>(adj[node].size()) < 3) continue; // not a junction
+            auto &ids = nodeToCorr[node];
+            if (std::find(ids.begin(), ids.end(), static_cast<int>(ci)) == ids.end())
+                ids.push_back(static_cast<int>(ci));
+        }
+    }
+    for (auto &kv : nodeToCorr) {
+        const std::vector<int> &ids = kv.second;
+        if (ids.size() < 2) continue;
+        for (int id : ids)
+            for (int other : ids)
+                if (other != id)
+                    roomMap.corridors[id].crossings.push_back(
+                        {other, baseNodes[kv.first]});
+    }
+
+    // Stamp centerline cells with their corridor id (first writer wins at any
+    // junction cell shared by multiple corridors).
+    for (const auto &c : roomMap.corridors) {
+        for (const auto &p : c.centerline) {
+            int x = p.first, y = p.second;
+            if (x < 0 || x >= roomMap.width || y < 0 || y >= roomMap.height) continue;
+            if (roomMap.corridorLabels[y][x] == ROOM_NONE)
+                roomMap.corridorLabels[y][x] = c.id;
+        }
+    }
+
+    LOG_INFO("CorridorDetect: " << roomMap.corridors.size() << " corridors");
+    for (const auto &c : roomMap.corridors) {
+        LOG_INFO("CorridorDetect: Corr " << c.id
+            << " rooms=" << c.roomA << "<->" << c.roomB
+            << " start=(" << c.start.first << "," << c.start.second << ")"
+            << " end=(" << c.end.first << "," << c.end.second << ")"
+            << " len=" << c.length
+            << " wiggle=" << c.wiggle
+            << " diam(avg/min/max)=" << c.thickness.avgDiameter
+            << "/" << c.thickness.minDiameter
+            << "/" << c.thickness.maxDiameter
+            << " crossings=" << c.crossings.size());
+    }
 }
 
 } // namespace DistanceMap

@@ -3239,6 +3239,10 @@ Graph makeGraph(const Grid &floorGrid) {
   LOG_INFO("==ROOM DETECTION");
   graph.roomMap = DistanceMap::makeRoomMap(graph.infoGrid, graph.wallDistanceGrid);
 
+  LOG_INFO("==CORRIDOR DETECTION");
+  DistanceMap::detectCorridors(graph.roomMap, graph.baseNodes, graph.baseEdges,
+                               graph.wallDistanceGrid);
+
   LOG_INFO("## ======= GRAPH MADE =====");
   debugDump(graph);
   return graph;
