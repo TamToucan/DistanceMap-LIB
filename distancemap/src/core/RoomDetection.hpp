@@ -19,8 +19,8 @@ namespace DistanceMap {
 
 const int ROOM_NONE = -1; ///< sentinel: cell is unassigned (corridor or wall)
 
-const int CORRIDOR_DIAM_TIGHT_MAX  = 2; ///< diameter <= 2 -> "tight" bucket
-const int CORRIDOR_DIAM_NORMAL_MAX = 4; ///< diameter 3-4 -> "normal"; >4 -> "wide"
+const int CORRIDOR_DIAM_TIGHT_MAX  = 3; ///< diameter <= 3 -> "tight" bucket
+const int CORRIDOR_DIAM_NORMAL_MAX = 5; ///< diameter 5 -> "normal"; >=7 -> "wide"
 
 /**
  * @struct RoomParams
@@ -54,9 +54,9 @@ struct RoomRegion {
  * cell is 2*wallDist+1.
  */
 struct CorridorThickness {
-    float fracTight   = 0.0f; ///< fraction of length with diameter 1-2 tiles
-    float fracNormal  = 0.0f; ///< diameter 3-4
-    float fracWide    = 0.0f; ///< diameter 5+
+    float fracTight   = 0.0f; ///< fraction of length with diameter <= 3 tiles
+    float fracNormal  = 0.0f; ///< diameter 5
+    float fracWide    = 0.0f; ///< diameter >= 7
     int   avgDiameter = 0;
     int   minDiameter = 0;
     int   maxDiameter = 0;
