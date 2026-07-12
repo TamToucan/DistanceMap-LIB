@@ -2196,6 +2196,16 @@ generateAbstractZones(ZoneGrid &zoneGrid, const Grid &grid,
               << ") to (" << to.first << "," << to.second << ")"
               << " fromZone=" << fromZone << " toZone=" << toZone);
 
+    // An edge endpoint can land on a cell the multi-source BFS never reached
+    // (a non-BOUNDARY wall endpoint, or an isolated floor pocket), leaving its
+    // zone unassigned (-1). Indexing zones[-1] is UB / an out-of-range crash;
+    // skip the edge rather than register it against a nonexistent zone.
+    if (fromZone < 0 || toZone < 0) {
+      LOG_DEBUG("    Skipping edge " << edgeIdx << " with unzoned endpoint "
+                << "(fromZone=" << fromZone << " toZone=" << toZone << ")");
+      return;
+    }
+
     // Add the edge to ALL zones it passes through (fromZone and toZone)
     std::vector<int> zonesToAdd = {fromZone, toZone};
 
@@ -2247,6 +2257,10 @@ generateAbstractZones(ZoneGrid &zoneGrid, const Grid &grid,
         continue;
 
       int curZone = zoneGrid[y][x].closestAbstractNodeIdx;
+      // Same guard as addEdge: a non-WALL cell the BFS never reached stays -1;
+      // don't index abstractNodes[-1] / zones[-1].
+      if (curZone < 0)
+        continue;
       int curBaseNode = abstractNodes[curZone].baseCenterNode;
 
       // Bottom bits of infoGrid are node or edge index
