@@ -2940,6 +2940,7 @@ makeExtraAbstractEdges(const std::vector<Point> &baseNodes,
 std::vector<AbstractLevel> makeAbstractLevels(const Graph &graph) {
   std::vector<AbstractLevel> abstractLevels;
   LOG_INFO("## MAKE ABSTRACT LEVELS");
+  size_t prevZoneCount = std::numeric_limits<size_t>::max();
   do {
     int pass = abstractLevels.size();
 
@@ -2994,6 +2995,20 @@ std::vector<AbstractLevel> makeAbstractLevels(const Graph &graph) {
 
     // Add zone bridge graph
     buildZoneBridgeGraph(ablv);
+
+    // Passes only tighten dbscan's minPts (eps is fixed), so on some maps a
+    // pass makes every base node NOISE, createAbstractNodes() falls back to one
+    // abstract node per base node, and the zone count jumps back up instead of
+    // shrinking. Without this guard the <=16 test is never reached and each
+    // pass leaks another zoneGrid until the process thrashes.
+    const size_t zoneCount = ablv.zones.size();
+    if (pass > 0 && zoneCount >= prevZoneCount) {
+      LOG_INFO("   => ZONES NOT SHRINKING (" << zoneCount << " >= "
+                                             << prevZoneCount << ") => BREAK");
+      abstractLevels.pop_back(); // keep the last level that did make progress
+      break;
+    }
+    prevZoneCount = zoneCount;
 
   } while (abstractLevels.back().zones.size() > 16);
 
