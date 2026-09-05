@@ -40,6 +40,12 @@ namespace Routing {
  */
 class DISTANCEMAP_API SparseNavGraph {
 public:
+  /// Seed the shared parallel-edge tie-break RNG (see the note in the .cpp).
+  /// Process-wide, not per-graph. Call once per world seed, before routing —
+  /// the host does it from NavSystem::init. Without a call the stream still
+  /// runs, but from a fixed constant rather than the caller's seed.
+  static void setRngSeed(unsigned int seed);
+
   // Base graph adjacency (not deadEnds)
   std::vector<std::vector<std::pair<int, int>>>
       forwardConnections; // node -> [ { otherNode, edge_idx },... ]

@@ -3,7 +3,6 @@
 #include <algorithm>
 #include <climits>
 #include <queue>
-#include <chrono>
 
 #include "Debug.h"
 #include "RandSimple.h"
@@ -13,12 +12,22 @@
 namespace DistanceMap {
 namespace Routing {
 
-  // NOTE: OK to use own RNG here since it's just being used to
-  // pick random edges. Movement dose not need to be deterministic
-  // based on a global seed
-static RNG::RandSimple rng(std::chrono::high_resolution_clock::now()
-                    .time_since_epoch()
-                    .count());
+// Parallel-edge tie-break RNG, shared by every graph in the process.
+//
+// The stream is deliberately free-running — which edge an agent takes when two
+// join the same pair of nodes is a movement choice, and movement is not
+// required to reproduce frame-for-frame. What it must NOT be is seeded from the
+// wall clock, which is what this used to do
+// (`high_resolution_clock::now().time_since_epoch().count()`). That is OS
+// entropy inside the simulation layer: banned outright by the host project's
+// determinism rule, and it makes any future "replay this fight" impossible.
+//
+// It is now seeded from the caller's own seed manager via setRngSeed(), so the
+// whole process is a pure function of the seed string even though this
+// particular stream is never rewound.
+static RNG::RandSimple rng(1u);
+
+void SparseNavGraph::setRngSeed(unsigned int seed) { rng.initialise(seed); }
 
 SparseNavGraph::SparseNavGraph() {}
 
