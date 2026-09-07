@@ -2913,17 +2913,38 @@ makeExtraAbstractEdges(const std::vector<Point> &baseNodes,
       std::vector<AbstractEdge> newEdges =
           AbstractMST::generateMSTAbstractEdges(baseGraph, baseEdges, baseNodes,
                                                 adjacentNodes);
-      if (newEdges.size() > 1) {
-        LOG_ERROR("*********** EEEEK. No new edges ********** ");
+      // `adjacentNodes` holds exactly two entries, so the MST over it is
+      // exactly one edge and buildMST stops at numAbstractNodes-1 == 1. ">1" is
+      // therefore unreachable; the case worth reporting is ZERO, which means no
+      // route was found even though an edge above said one was possible. The
+      // old test paired the unreachable condition with a "No new edges"
+      // message, so it could never fire and never said what it meant.
+      // WARNING, not ERROR: the zones simply go unconnected by an extra edge,
+      // which the caller tolerates.
+      if (newEdges.empty()) {
+        LOG_WARNING("Zone connect " << zoneA << "->" << zoneB
+                                    << ": no route found between adjacent "
+                                       "zones");
       }
       LOG_INFO("###### => GOT " << newEdges.size() << " extra edges");
       for (const auto &newEdge : newEdges) {
-        const Edge &fromBase = adjacentBaseEdges[newEdge.from];
-        const Edge &toBase = adjacentBaseEdges[newEdge.to];
+        // newEdge.from / .to are indices into `adjacentNodes` — the vector
+        // passed to generateMSTAbstractEdges — which is exactly
+        // {abstractNodes[zoneA], abstractNodes[zoneB]}. So they are 0 or 1,
+        // meaning zoneA or zoneB.
+        //
+        // They used to index `adjacentBaseEdges`, a DIFFERENT vector holding
+        // the qualifying base edges. Whenever fewer than two edges qualified,
+        // `adjacentBaseEdges[1]` ran off the end: an assert in a debug build
+        // ("__n < this->size()") and a silent out-of-bounds read in release.
+        // Both reads existed only to format the line below — `extraEdges` is
+        // built from zoneA / zoneB / newEdge.path and never used either one —
+        // so the whole crash was in service of a debug string.
         LOG_DEBUG(" ***** ADDed zone connect: "
-                  << zoneA << "->" << zoneB << "  EDGE:   frombase: "
-                  << fromBase.from << "->" << fromBase.to
-                  << "  toBase: " << toBase.from << "->" << toBase.to);
+                  << zoneA << "->" << zoneB << "  EDGE: node " << newEdge.from
+                  << "->" << newEdge.to << " (zone "
+                  << (newEdge.from == 0 ? zoneA : zoneB) << "->"
+                  << (newEdge.to == 0 ? zoneA : zoneB) << ")");
         LOG_DEBUG_CONT("       Path sz:" << newEdge.path.size() << "  ");
         LOG_DEBUG_FOR(const auto &p : newEdge.path,
                       p.first << "," << p.second << "  ");
