@@ -661,10 +661,17 @@ void markGridPaths(Grid &grid, const std::vector<Edge> &edges) {
 //  2. Every EDGE cell must appear in exactly one Edge::path (no cell claimed
 //     by multiple edges, and none encoded in the grid but absent from every
 //     path).
+// mergedCells are the cells of nodes removed by mergeFixNodes. Every edge of
+// such a node runs through its cell, so check 1 skips them (and treats them
+// like a NODE neighbour) and check 2 allows several paths on them
+// (distance_map_graph.md DMG-03).
 static void validateEdgeCells(const Grid &grid,
-                               const std::vector<Edge> &edges) {
+                               const std::vector<Edge> &edges,
+                               const std::vector<Point> &mergedCells) {
   const int rows = static_cast<int>(grid.size());
   const int cols = (rows > 0) ? static_cast<int>(grid[0].size()) : 0;
+  const std::unordered_set<Point, GridType::PairHash> merged(
+      mergedCells.begin(), mergedCells.end());
 
   // Build a map: cell -> list of edge indices whose path contains that cell.
   std::unordered_map<GridType::Point, std::vector<int>,
@@ -683,13 +690,18 @@ static void validateEdgeCells(const Grid &grid,
       const int edgeIdx = cell & GridType::EDGE_MASK;
       const GridType::Point pt{c, r};
 
+      const bool isMerged = merged.count(pt) > 0;
+
       // Check 1: neighbours
       std::vector<int> neigbourEdgeIndices;
       for (const auto &d : GridType::directions8) {
+        if (isMerged)
+          break;
         const int nc = c + d.first;
         const int nr = r + d.second;
         const int ncell = grid[nr][nc];
-        if (ncell & (GridType::DEND | GridType::NODE)) {
+        if ((ncell & (GridType::DEND | GridType::NODE)) ||
+            merged.count({nc, nr})) {
           neigbourEdgeIndices.clear();
           break;
         }
@@ -711,7 +723,7 @@ static void validateEdgeCells(const Grid &grid,
       if (it == cellToEdges.end()) {
         LOG_ERROR("VAL: EDGE cell (" << c << "," << r << ") idx=" << edgeIdx
                   << " is not in any Edge::path");
-      } else if (it->second.size() > 1) {
+      } else if (it->second.size() > 1 && !isMerged) {
         LOG_ERROR("VAL: EDGE cell (" << c << "," << r << ") idx=" << edgeIdx
                   << " is in " << it->second.size() << " Edge::paths");
       }
@@ -761,18 +773,21 @@ static std::vector<Edge> detectLoopEdges(const Grid &infoGrid,
   }
 
   // Phase 3: BFS to find connected components of orphaned cells.
-  std::vector<std::vector<bool>> compVisited(rows, std::vector<bool>(cols, false));
+  // compOf holds each orphaned cell's component id (-1 = not yet visited).
+  std::vector<std::vector<int>> compOf(rows, std::vector<int>(cols, -1));
+  int compId = -1;
 
   for (int r0 = 0; r0 < rows; ++r0) {
     for (int c0 = 0; c0 < cols; ++c0) {
-      if (!isOrphaned[r0][c0] || compVisited[r0][c0])
+      if (!isOrphaned[r0][c0] || compOf[r0][c0] >= 0)
         continue;
 
       // BFS: collect component cells.
+      ++compId;
       std::vector<Point> comp;
       std::queue<Point> q;
       q.push({c0, r0});
-      compVisited[r0][c0] = true;
+      compOf[r0][c0] = compId;
       while (!q.empty()) {
         auto [cx, cy] = q.front();
         q.pop();
@@ -780,8 +795,8 @@ static std::vector<Edge> detectLoopEdges(const Grid &infoGrid,
         for (const auto &d : directions8) {
           int nx = cx + d.first, ny = cy + d.second;
           if (nx < 0 || nx >= cols || ny < 0 || ny >= rows) continue;
-          if (isOrphaned[ny][nx] && !compVisited[ny][nx]) {
-            compVisited[ny][nx] = true;
+          if (isOrphaned[ny][nx] && compOf[ny][nx] < 0) {
+            compOf[ny][nx] = compId;
             q.push({nx, ny});
           }
         }
@@ -811,11 +826,13 @@ static std::vector<Edge> detectLoopEdges(const Grid &infoGrid,
       const Point &nodePos = nodes[static_cast<std::size_t>(nodeIdx)];
 
       // Phase 5: DFS to trace ordered loop path from nodePos back to nodePos.
+      // Only this component's cells are walked, so a node with two orphaned
+      // components traces each one once (distance_map_graph.md DMG-02).
       std::vector<std::vector<bool>> dfsVisited(rows, std::vector<bool>(cols, false));
       Path loopPath;
 
-      // Recursive DFS lambda: extend path through orphaned cells until we
-      // reach a neighbour equal to nodePos (cycle closed).
+      // Recursive DFS lambda: extend path through the component's cells until
+      // we reach a neighbour equal to nodePos (cycle closed).
       std::function<bool(int, int)> dfsLoop = [&](int cx, int cy) -> bool {
         for (const auto &d : directions8) {
           int nx = cx + d.first, ny = cy + d.second;
@@ -825,8 +842,8 @@ static std::vector<Edge> detectLoopEdges(const Grid &infoGrid,
             loopPath.push_back(nodePos);
             return true;
           }
-          // Continue through unvisited orphaned cells.
-          if (isOrphaned[ny][nx] && !dfsVisited[ny][nx]) {
+          // Continue through unvisited cells of this component.
+          if (compOf[ny][nx] == compId && !dfsVisited[ny][nx]) {
             dfsVisited[ny][nx] = true;
             loopPath.push_back({nx, ny});
             if (dfsLoop(nx, ny)) return true;
@@ -841,7 +858,7 @@ static std::vector<Edge> detectLoopEdges(const Grid &infoGrid,
       for (const auto &d : directions8) {
         int sx = nodePos.first + d.first, sy = nodePos.second + d.second;
         if (sx < 0 || sx >= cols || sy < 0 || sy >= rows) continue;
-        if (!isOrphaned[sy][sx]) continue;
+        if (compOf[sy][sx] != compId) continue;
         dfsVisited[sy][sx] = true;
         loopPath = {nodePos, {sx, sy}};
         if (dfsLoop(sx, sy)) {
@@ -890,9 +907,12 @@ static std::vector<Edge> detectLoopEdges(const Grid &infoGrid,
 //
 // The loop edges are not currently in the edges and need added.
 // The loop node is in the list of nodes, so the new one needs added.
+// The new node is also written into infoGrid as a NODE, like markGridNodes
+// does, so rewriteInfoGrid keeps it (distance_map_graph.md DMG-01).
 //
 void splitLoopEdges(const std::vector<Edge>& loops,
-                    std::vector<Edge> &edges, std::vector<Point> &nodes) {
+                    std::vector<Edge> &edges, std::vector<Point> &nodes,
+                    Grid &infoGrid) {
   LOG_INFO("## splitLoopEdges"); 
   auto addEdge = [&edges](const Edge& e) -> void{
     edges.push_back(e);
@@ -909,6 +929,8 @@ void splitLoopEdges(const std::vector<Edge>& loops,
     // Add new node at the midpoint of the loop path
     const int newNodeIdx = static_cast<int>(nodes.size());
     nodes.push_back(loopPath[mid]);
+    infoGrid[loopPath[mid].second][loopPath[mid].first] =
+        GridToGraph::NODE + newNodeIdx;
     LOG_INFO("  New node: " << newNodeIdx << " at " << loopPath[mid].first << "," << loopPath[mid].second);
     
     // First edge: loop.from → new node (first half of path inclusive of mid)
@@ -1581,12 +1603,16 @@ BaseGraph fixBaseEdges(std::vector<Edge> &baseEdges, const Grid &infoGrid,
 //
 // Therefore the number of edges does not change, but 3*fixNodes.size() nodes are removed
 //
-void mergeFixNodes(const std::vector<std::vector<int>> &fixNodes,
+// Returns the cells of the removed nodes. Every edge of a removed node now runs
+// through its cell, so validateEdgeCells allows them to be shared
+// (distance_map_graph.md DMG-03).
+//
+std::vector<Point> mergeFixNodes(const std::vector<std::vector<int>> &fixNodes,
                    std::vector<Point> &nodes, std::vector<Edge> &edges,
                    Grid &grid) {
   LOG_INFO("## MERGE FIX NODES: fixes: " << fixNodes.size()
           << " nodes: " << nodes.size() << " edges: " << edges.size());
-  if (fixNodes.empty()) return;
+  if (fixNodes.empty()) return {};
 
   // Phase 1: Build remap (deleted -> survivor).  Survivor = lowest index in group.
   // Path-compress afterwards so chains caused by overlapping 2x2 blocks resolve
@@ -1684,9 +1710,12 @@ void mergeFixNodes(const std::vector<std::vector<int>> &fixNodes,
 
   // Phase 3: Clear deleted node cells to PATH=1 so rewriteInfoGrid/markGridPaths
   // can reclaim them as interior edge cells.
+  std::vector<Point> mergedCells;
+  mergedCells.reserve(deleted.size());
   for (int idx : deleted) {
     const Point &p = nodes[idx];
     grid[p.second][p.first] = PATH;
+    mergedCells.push_back(p);
     LOG_INFO("Need to fix grid cell: " << p.first <<","<< p.second);
   }
 
@@ -1733,8 +1762,9 @@ void mergeFixNodes(const std::vector<std::vector<int>> &fixNodes,
     }
   }
 
-  LOG_INFO("  MERGE FIX NODES Done: remmoved: " << deleted.size() 
+  LOG_INFO("  MERGE FIX NODES Done: remmoved: " << deleted.size()
            << " nodes: " << nodes.size() << " edges: " << edges.size());
+  return mergedCells;
 }
 
 /////////////////////////////////////////////////////////////////////////////////////////
@@ -3154,12 +3184,13 @@ Graph makeGraph(const Grid &floorGrid) {
   //
   // Split the loops into 2 edges by adding a new NODE in the middle of the loop
   //
-  splitLoopEdges(loops, graph.baseEdges, graph.baseNodes);
+  splitLoopEdges(loops, graph.baseEdges, graph.baseNodes, graph.infoGrid);
 
   // Detect PATH cells shared by two edge paths (caused by findNodeEdges
   // re-walking cells already claimed by findEdges) and reroute the
   // duplicate edge around the cells owned by the original edge.
-  mergeFixNodes(fixNodes, graph.baseNodes, graph.baseEdges, graph.infoGrid);
+  const std::vector<Point> mergedCells =
+      mergeFixNodes(fixNodes, graph.baseNodes, graph.baseEdges, graph.infoGrid);
 
   //
   // Build the base graph
@@ -3183,7 +3214,7 @@ Graph makeGraph(const Grid &floorGrid) {
   markGridPaths(graph.infoGrid, graph.baseEdges);
 
   // Validation and debug
-  validateEdgeCells(graph.infoGrid, graph.baseEdges);
+  validateEdgeCells(graph.infoGrid, graph.baseEdges, mergedCells);
   debugGridEdges(graph);
 
   //
