@@ -18,7 +18,11 @@ constexpr uint8_t MAX_COST = 255;
 // Given uniform cost, each step costs 1.
 constexpr uint8_t STEP_COST = 1;
 
+/// Dump one zone pair's flow field as text, for eyeballing directions. Only
+/// built under DISTANCEMAP_DUMP_FLOW — see the call site.
+#ifdef DISTANCEMAP_DUMP_FLOW
 void debugFlow(int lev, int curZone, int adjacentZone, SubGrid subGrid);
+#endif
 
 // Extract a subgrid for the target zone.
 // zoneGrid: global vector of vector of GridPointInfo (size = rows x cols)
@@ -237,12 +241,18 @@ void generateFlowGrids(GridToGraph::Graph &graph) {
         }
         subGrid.costFlowFields.push_back(
             {adjZone, generateFlowFieldDial(subGrid, localSinks)});
+        // Off by default: this writes one FLOW_<lev>_z_<a>_to_<b>.txt into the
+        // working directory per zone pair, which is thousands of files for a
+        // real map. Set DISTANCEMAP_DUMP_FLOW to turn it back on.
+#ifdef DISTANCEMAP_DUMP_FLOW
         debugFlow(levIdx, zi, adjZone, subGrid);
+#endif
       }
     }
   }
 }
 
+#ifdef DISTANCEMAP_DUMP_FLOW
 void debugFlow(int lev, int curZone, int adjacentZone, SubGrid subGrid) {
   std::ostringstream oss;
   oss << "FLOW_" << lev << "_z_" << curZone << "_to_" << adjacentZone << ".txt";
@@ -262,6 +272,7 @@ void debugFlow(int lev, int curZone, int adjacentZone, SubGrid subGrid) {
     outFile << std::endl;
   }
 }
+#endif // DISTANCEMAP_DUMP_FLOW
 
 } // namespace FlowField
 } // namespace DistanceMap
