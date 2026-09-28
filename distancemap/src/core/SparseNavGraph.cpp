@@ -451,12 +451,14 @@ std::vector<int> SparseNavGraph::findZoneEdgeToNodePath(
                                           << " to routeNodes");
 
   if (edgePath.empty()) {
+    // A* met at the target with nothing to walk: the target is an end of the
+    // source edge, so the route is just that end — follow the source edge to
+    // it. This used to answer {otherEnd, target}, which sent the agent to the
+    // FAR end first and back along the same edge (CuteLott
+    // specs/features/distance_map_graph.md §6c, DMG-08).
     const auto &[srcFrom, srcTo] = edgeFromTos[sourceEdgeIdx];
-    if (srcTo == targetNodeIdx)
-      ctx->routeNodes = {srcFrom, srcTo};
-    else if (srcFrom == targetNodeIdx)
-      ctx->routeNodes = (srcTo != -1) ? std::vector<int>{srcTo, srcFrom}
-                                      : std::vector<int>{srcFrom};
+    if (srcTo == targetNodeIdx || srcFrom == targetNodeIdx)
+      ctx->routeNodes = {targetNodeIdx};
     else
       ctx->routeNodes = {};
     return ctx->routeNodes;

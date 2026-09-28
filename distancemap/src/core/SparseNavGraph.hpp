@@ -154,7 +154,8 @@ private:
                                           int costBias = 0,
                                           int maxPerturbation = 15) const;
 
-  /// Same-zone edge->node A*, restricted to the zone's nodes/edges.
+  /// Same-zone edge->node A*, restricted to the zone's nodes/edges. A target
+  /// that is an end of the source edge routes as {target} (DMG-08).
   std::vector<int> findZoneEdgeToNodePath(Router::RouteCtx *ctx,
                                           const std::vector<int> &zoneBases,
                                           const std::vector<int> &zoneEdges,
