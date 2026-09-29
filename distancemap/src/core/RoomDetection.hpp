@@ -21,6 +21,9 @@ const int ROOM_NONE = -1; ///< sentinel: cell is unassigned (corridor or wall)
 
 const int CORRIDOR_DIAM_TIGHT_MAX  = 3; ///< diameter <= 3 -> "tight" bucket
 const int CORRIDOR_DIAM_NORMAL_MAX = 5; ///< diameter 5 -> "normal"; >=7 -> "wide"
+/// Most port-pair corridors detectCorridors will enumerate (corridor_detection.md
+/// C-09). Above it the port-pair pass is skipped and corridorsOverflow is set.
+const int MAX_PORT_PAIR_CORRIDORS = 5000;
 
 /**
  * @struct RoomParams
@@ -102,6 +105,7 @@ struct RoomMap {
     std::vector<std::vector<int>> corridorLabels; ///< [y][x]: ROOM_NONE or corridor id (centerline cells only)
     std::vector<RoomRegion> rooms;
     std::vector<Corridor> corridors;              ///< Abstract room-to-room connections
+    bool corridorsOverflow = false;               ///< C-09: port-pair pass skipped (over MAX_PORT_PAIR_CORRIDORS)
     int width  = 0;
     int height = 0;
 };

@@ -360,6 +360,7 @@ void detectCorridors(RoomMap &roomMap,
                      const std::vector<GridType::Edge> &baseEdges,
                      const WallDistanceGrid &wallDist) {
     roomMap.corridors.clear();
+    roomMap.corridorsOverflow = false;
     roomMap.corridorLabels.assign(roomMap.height,
                                   std::vector<int>(roomMap.width, ROOM_NONE));
     const int N = static_cast<int>(baseNodes.size());
@@ -408,22 +409,32 @@ void detectCorridors(RoomMap &roomMap,
         }
     }
 
-    // Shortest corridor-node path (by node count) over adj, deterministic.
-    auto bfsPath = [&](int src, int dst) -> std::vector<int> {
-        if (src == dst) return {src};
-        std::vector<int> prev(N, -1);
-        std::vector<char> seen(N, 0);
+    // Shortest corridor-node paths (by node count) over adj, deterministic.
+    // One full BFS per source node, reused for every destination (C-08). BFS
+    // sets prev at discovery in adj order, so the tree is the same one a BFS
+    // stopped at any single dst would have built: every path is identical to
+    // the old per-pair search, at O(ports) searches instead of O(ports^2).
+    std::vector<int> bfsPrev(N, -1);
+    std::vector<char> bfsSeen(N, 0);
+    int bfsSrc = -1;
+    auto bfsFrom = [&](int src) {
+        if (src == bfsSrc) return;
+        bfsSrc = src;
+        std::fill(bfsPrev.begin(), bfsPrev.end(), -1);
+        std::fill(bfsSeen.begin(), bfsSeen.end(), 0);
         std::queue<int> q;
-        q.push(src); seen[src] = 1;
+        q.push(src); bfsSeen[src] = 1;
         while (!q.empty()) {
             int c = q.front(); q.pop();
-            if (c == dst) break;
             for (auto &pr : adj[c])
-                if (!seen[pr.first]) { seen[pr.first] = 1; prev[pr.first] = c; q.push(pr.first); }
+                if (!bfsSeen[pr.first]) { bfsSeen[pr.first] = 1; bfsPrev[pr.first] = c; q.push(pr.first); }
         }
-        if (!seen[dst]) return {};
+    };
+    // Path from the current bfsFrom source to dst; empty if unreachable.
+    auto pathTo = [&](int dst) -> std::vector<int> {
+        if (!bfsSeen[dst]) return {};
         std::vector<int> seq;
-        for (int c = dst; c != -1; c = prev[c]) seq.push_back(c);
+        for (int c = dst; c != -1; c = bfsPrev[c]) seq.push_back(c);
         std::reverse(seq.begin(), seq.end());
         return seq;
     };
@@ -528,11 +539,47 @@ void detectCorridors(RoomMap &roomMap,
 
     // ---- Enumerate room-pair corridors over port pairs ----------------------
     const int P = static_cast<int>(ports.size());
-    for (int i = 0; i < P; ++i) {
+
+    // C-09: count what enumeration would produce before doing it. Every pair
+    // of ports in the same corridor network with different rooms yields one
+    // corridor, so the count is exact. A network that is one mesh of wall
+    // specks turns this into tens of thousands of corridors (minutes, GBs).
+    std::vector<int> net(N, -1);
+    for (int s = 0, id = 0; s < N; ++s) {
+        if (net[s] >= 0) continue;
+        std::queue<int> q;
+        q.push(s); net[s] = id;
+        while (!q.empty()) {
+            int c = q.front(); q.pop();
+            for (auto &pr : adj[c])
+                if (net[pr.first] < 0) { net[pr.first] = id; q.push(pr.first); }
+        }
+        ++id;
+    }
+    std::unordered_map<int, std::unordered_map<int, long long>> portsByNetRoom;
+    for (const Port &p : ports) ++portsByNetRoom[net[p.corridorNode]][p.room];
+    long long pairTotal = 0;
+    for (const auto &nr : portsByNetRoom) {
+        long long n = 0, sameRoom = 0;
+        for (const auto &rc : nr.second) {
+            n += rc.second;
+            sameRoom += rc.second * (rc.second - 1) / 2;
+        }
+        pairTotal += n * (n - 1) / 2 - sameRoom;
+    }
+    if (pairTotal > MAX_PORT_PAIR_CORRIDORS) {
+        roomMap.corridorsOverflow = true;
+        LOG_ERROR("detectCorridors: " << pairTotal
+                  << " port-pair corridors > MAX_PORT_PAIR_CORRIDORS ("
+                  << MAX_PORT_PAIR_CORRIDORS
+                  << "); port-pair pass skipped (corridor_detection.md C-09)");
+    }
+
+    for (int i = 0; i < P && !roomMap.corridorsOverflow; ++i) {
+        bfsFrom(ports[i].corridorNode);
         for (int j = i + 1; j < P; ++j) {
             if (ports[i].room == ports[j].room) continue; // same room: skip
-            std::vector<int> corPath =
-                bfsPath(ports[i].corridorNode, ports[j].corridorNode);
+            std::vector<int> corPath = pathTo(ports[j].corridorNode);
             if (corPath.empty()) continue; // disconnected networks
 
             std::vector<int> seq;
