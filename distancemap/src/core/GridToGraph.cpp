@@ -833,6 +833,9 @@ static std::vector<Edge> detectLoopEdges(const Grid &infoGrid,
 
       // Recursive DFS lambda: extend path through the component's cells until
       // we reach a neighbour equal to nodePos (cycle closed).
+      // A cell backed out of stays visited (DMG-09): un-marking it made this
+      // try every simple path through the group, which never ends on a
+      // thick blob of orphan cells (a cave-search map hung here for hours).
       std::function<bool(int, int)> dfsLoop = [&](int cx, int cy) -> bool {
         for (const auto &d : directions8) {
           int nx = cx + d.first, ny = cy + d.second;
@@ -848,7 +851,6 @@ static std::vector<Edge> detectLoopEdges(const Grid &infoGrid,
             loopPath.push_back({nx, ny});
             if (dfsLoop(nx, ny)) return true;
             loopPath.pop_back();
-            dfsVisited[ny][nx] = false;
           }
         }
         return false;
