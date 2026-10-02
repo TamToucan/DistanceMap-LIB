@@ -210,6 +210,12 @@ void generateFlowGrids(GridToGraph::Graph &graph) {
                                     << " subgrids: " << ablv.subGrids.size());
   }
 
+  // Outside the map counts as wall (DMG-10).
+  const auto isWallCell = [&graph, rows, cols](int x, int y) {
+    return x < 0 || y < 0 || x >= cols || y >= rows ||
+           (graph.infoGrid[y][x] & GridType::WALL) != 0;
+  };
+
   LOG_DEBUG("## FLOW: AbstractLevels: " << graph.abstractLevels.size());
   for (int levIdx = 0; levIdx < graph.abstractLevels.size(); ++levIdx) {
     auto &ablv = graph.abstractLevels[levIdx];
@@ -229,7 +235,27 @@ void generateFlowGrids(GridToGraph::Graph &graph) {
         // crossing; flow-field generation just needs all sinks together.
         GridType::BoundaryCells flatBoundary;
         for (const auto &slot : boundarySlots) {
-          flatBoundary.insert(slot.begin(), slot.end());
+          for (const auto &bi : slot) {
+            // DMG-10: a sink must be a cell an agent can stand on and leave
+            // from. Wall cells carry zone ids, so a wall between two zones
+            // shows up as their boundary — and as a sink it pulls every
+            // floor cell beside it into the wall. The boundary map itself is
+            // left alone: other code reads it.
+            const int ex = bi.sink.first +
+                           (bi.exitDirIdx >= 0 && bi.exitDirIdx < 8
+                                ? GridType::directions8[bi.exitDirIdx].first
+                                : 0);
+            const int ey = bi.sink.second +
+                           (bi.exitDirIdx >= 0 && bi.exitDirIdx < 8
+                                ? GridType::directions8[bi.exitDirIdx].second
+                                : 0);
+            if (bi.exitDirIdx < 0 || bi.exitDirIdx >= 8 ||
+                isWallCell(bi.sink.first, bi.sink.second) ||
+                isWallCell(ex, ey)) {
+              continue;
+            }
+            flatBoundary.insert(bi);
+          }
         }
         auto localSinks = convertSinksToLocal(flatBoundary, subGrid);
 
