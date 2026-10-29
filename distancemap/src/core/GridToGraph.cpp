@@ -3134,6 +3134,28 @@ Graph makeGraph(const Grid &floorGrid) {
   // allowed. Easiest fix I can see is to make x and y NODEs then everthing works.
   //
   std::vector<std::vector<int>> fixNodes = createFixNodes(graph.infoGrid, graph.baseNodes);
+
+  //
+  // A skeleton with no junction at all (one chain between two dead ends, or
+  // one plain loop) leaves findEdges nothing to anchor on: a DEND->DEND edge
+  // is refused and a loop needs a NODE. The graph came out empty and the game
+  // fell back to an EMPTY level. Promote the first chain cell (scan order) to
+  // a NODE; a loop through it is then split by splitLoopEdges as usual.
+  //
+  if (graph.baseNodes.empty()) {
+    const int rows = static_cast<int>(graph.infoGrid.size());
+    const int cols = static_cast<int>(graph.infoGrid[0].size());
+    for (int y = 1; y < rows - 1 && graph.baseNodes.empty(); ++y) {
+      for (int x = 1; x < cols - 1; ++x) {
+        // NOTE: This relies on PATH==1, as detectDeadEnds does
+        if (graph.infoGrid[y][x] && countNeighbors(graph.infoGrid, x, y) == 2) {
+          LOG_INFO("##NO JUNCTION: NODE at " << x << "," << y);
+          graph.baseNodes.push_back({x, y});
+          break;
+        }
+      }
+    }
+  }
   {
     // Debug
     Grid tempGrid(graph.infoGrid.size(),
