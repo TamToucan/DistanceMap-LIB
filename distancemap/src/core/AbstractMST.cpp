@@ -127,6 +127,36 @@ std::vector<int> reconstructBaseNodePath(int startIdx, int targetIdx,
   return path;
 }
 
+// One candidate AbstractEdge: everything Kruskal needs, without the paths
+// (distance_map_graph.md DMG-13). A map can have millions of pairs.
+struct Candidate {
+  int from;
+  int to;
+  size_t pathLen;
+};
+
+// One abstract node's Dijkstra result, kept to build its kept edges' paths.
+struct SourceRoutes {
+  int startBase;
+  std::vector<int> prevNodes;
+  std::vector<std::pair<int, bool>> usedEdge;
+};
+
+// reconstructPath(...).size(), without building the path.
+size_t pathLength(int startIdx, int targetIdx,
+                  const std::vector<int> &prevNodes,
+                  const std::vector<std::pair<int, bool>> &usedEdge,
+                  const std::vector<Edge> &edges) {
+  size_t length = 0;
+  size_t firstEdgeSize = 0;
+  for (int curIdx = targetIdx; curIdx != startIdx; curIdx = prevNodes[curIdx]) {
+    firstEdgeSize = edges[usedEdge[curIdx].first].path.size();
+    length += firstEdgeSize > 0 ? firstEdgeSize - 1 : 0;
+  }
+  // Every segment but the first drops its duplicate junction point.
+  return length + (firstEdgeSize > 0 ? 1 : 0);
+}
+
 // Compute candidate AbstractEdges between all pairs of AbstractNodes.
 // For each abstract node pair (i, j) with i < j, run Dijkstra's from
 // abstractNodes[i].baseCenterNode to determine the shortest path to
@@ -135,7 +165,8 @@ void computeCandidateEdges(const BaseGraph &inBaseGraph,
                            const std::vector<Edge> &edges,
                            const std::vector<Point> &baseNodes,
                            const std::vector<AbstractNode> &abstractNodes,
-                           std::vector<AbstractEdge> &candidates) {
+                           std::vector<Candidate> &candidates,
+                           std::vector<SourceRoutes> &routes) {
   int numBaseNodes = static_cast<int>(baseNodes.size());
   BaseGraph gened;
   if (inBaseGraph.empty()) {
@@ -145,62 +176,73 @@ void computeCandidateEdges(const BaseGraph &inBaseGraph,
 
   int numAbstractNodes = static_cast<int>(abstractNodes.size());
   candidates.clear();
+  routes.clear();
+  routes.reserve(numAbstractNodes);
 
   // For each abstract node as a source:
   LOG_DEBUG("##MST: computeCandidateEdges abNodes: " << numAbstractNodes);
   for (int i = 0; i < numAbstractNodes; ++i) {
-    int startBase = abstractNodes[i].baseCenterNode;
+    SourceRoutes source;
+    source.startBase = abstractNodes[i].baseCenterNode;
     std::vector<int> costs;
-    std::vector<int> prevNodes;
-    std::vector<std::pair<int, bool>> usedEdge;
-    runDijkstra(startBase, baseGraph, costs, prevNodes, usedEdge);
+    runDijkstra(source.startBase, baseGraph, costs, source.prevNodes,
+                source.usedEdge);
 
     // For every other abstract node j > i, record the candidate edge.
     for (int j = i + 1; j < numAbstractNodes; ++j) {
       int targetBase = abstractNodes[j].baseCenterNode;
       if (costs[targetBase] == std::numeric_limits<int>::max())
         continue; // Not reachable.
-      AbstractEdge ce;
-      ce.from = i;
-      ce.to = j;
-      ce.path =
-          reconstructPath(startBase, targetBase, prevNodes, usedEdge, edges);
-      ce.nodePath = reconstructBaseNodePath(startBase, targetBase, prevNodes);
-      LOG_DEBUG("NODEPATH:  " << i);
-      LOG_DEBUG_FOR(auto n : ce.nodePath, "  " << n << " ("
-                                               << baseNodes[n].first << ","
-                                               << baseNodes[n].second << ")");
-      LOG_DEBUG_FOR(const auto &n : ce.path,
-                    " (" << n.first << "," << n.second << ")");
-
-      candidates.push_back(ce);
+      candidates.push_back({i, j,
+                            pathLength(source.startBase, targetBase,
+                                       source.prevNodes, source.usedEdge,
+                                       edges)});
     }
+    routes.push_back(std::move(source));
   }
   LOG_DEBUG("##=> " << candidates.size() << " candidates");
 }
 
 // Run Kruskal's algorithm on the candidate edges to build the MST over abstract
-// nodes.
-std::vector<AbstractEdge> buildMST(const std::vector<AbstractEdge> &candidates,
-                                   int numAbstractNodes) {
+// nodes. Only the edges it keeps get their paths built.
+std::vector<AbstractEdge> buildMST(std::vector<Candidate> &candidates,
+                                   const std::vector<SourceRoutes> &routes,
+                                   const std::vector<Edge> &edges,
+                                   const std::vector<Point> &baseNodes,
+                                   const std::vector<AbstractNode> &abstractNodes) {
+  int numAbstractNodes = static_cast<int>(abstractNodes.size());
   std::vector<AbstractEdge> mstEdges;
-  // Start with all candidate edges and sort them by weight.
-  std::vector<AbstractEdge> sortedEdges = candidates;
-  std::sort(sortedEdges.begin(), sortedEdges.end(),
-            [](const AbstractEdge &a, const AbstractEdge &b) {
-              return a.path.size() < b.path.size();
+  // Sort all candidate edges by weight.
+  std::sort(candidates.begin(), candidates.end(),
+            [](const Candidate &a, const Candidate &b) {
+              return a.pathLen < b.pathLen;
             });
 
   // Use a union-find structure to detect cycles.
   UnionFind uf(numAbstractNodes);
 
-  LOG_INFO("MST: Build MST from " << sortedEdges.size() << " candidates");
-  for (const AbstractEdge &ce : sortedEdges) {
-    int setA = uf.find(ce.from);
-    int setB = uf.find(ce.to);
+  LOG_INFO("MST: Build MST from " << candidates.size() << " candidates");
+  for (const Candidate &c : candidates) {
+    int setA = uf.find(c.from);
+    int setB = uf.find(c.to);
     if (setA != setB) {
       uf.unite(setA, setB);
-      mstEdges.push_back(ce);
+      const SourceRoutes &source = routes[c.from];
+      int targetBase = abstractNodes[c.to].baseCenterNode;
+      AbstractEdge ce;
+      ce.from = c.from;
+      ce.to = c.to;
+      ce.path = reconstructPath(source.startBase, targetBase, source.prevNodes,
+                                source.usedEdge, edges);
+      ce.nodePath =
+          reconstructBaseNodePath(source.startBase, targetBase, source.prevNodes);
+      LOG_DEBUG("NODEPATH:  " << c.from);
+      LOG_DEBUG_FOR(auto n : ce.nodePath, "  " << n << " ("
+                                               << baseNodes[n].first << ","
+                                               << baseNodes[n].second << ")");
+      LOG_DEBUG_FOR(const auto &n : ce.path,
+                    " (" << n.first << "," << n.second << ")");
+      mstEdges.push_back(std::move(ce));
       // Stop if we have n-1 edges.
       if (mstEdges.size() == static_cast<size_t>(numAbstractNodes - 1))
         break;
@@ -248,13 +290,15 @@ std::vector<AbstractEdge> AbstractMST::generateMSTAbstractEdges(
     const BaseGraph &graph, const std::vector<Edge> &edges,
     const std::vector<Point> &baseNodes,
     const std::vector<AbstractNode> &abstractNodes) {
-  std::vector<AbstractEdge> candidates;
+  std::vector<Candidate> candidates;
+  std::vector<SourceRoutes> routes;
   LOG_INFO("#MST: generateMSTAbstractEdges: for " << abstractNodes.size()
                                                   << " abstract nodes");
   // Idea was to remove dup F -> T keep the shortest path, but multiple paths is
   // allows for varied movement std::vector<Edge> simpleEdges =
   // simplifyEdges(edges);
-  computeCandidateEdges(graph, edges, baseNodes, abstractNodes, candidates);
-  return buildMST(candidates, static_cast<int>(abstractNodes.size()));
+  computeCandidateEdges(graph, edges, baseNodes, abstractNodes, candidates,
+                        routes);
+  return buildMST(candidates, routes, edges, baseNodes, abstractNodes);
 }
 } /* namespace DistanceMap */

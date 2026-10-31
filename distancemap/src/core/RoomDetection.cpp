@@ -641,9 +641,24 @@ void detectCorridors(RoomMap &roomMap,
                 ids.push_back(static_cast<int>(ci));
         }
     }
+    // C-10: a junction of k corridors makes k*(k-1) records. Count before storing:
+    // a lattice of tiny pillars turns this into GBs per map.
+    long long crossingTotal = 0;
+    for (const auto &kv : nodeToCorr) {
+        const long long k = static_cast<long long>(kv.second.size());
+        crossingTotal += k * (k - 1);
+    }
+    const bool crossingsFit = crossingTotal <= MAX_CORRIDOR_CROSSINGS;
+    if (!crossingsFit) {
+        roomMap.corridorsOverflow = true;
+        LOG_ERROR("detectCorridors: " << crossingTotal
+                  << " crossings > MAX_CORRIDOR_CROSSINGS ("
+                  << MAX_CORRIDOR_CROSSINGS
+                  << "); crossings skipped (corridor_detection.md C-10)");
+    }
     for (auto &kv : nodeToCorr) {
         const std::vector<int> &ids = kv.second;
-        if (ids.size() < 2) continue;
+        if (!crossingsFit || ids.size() < 2) continue;
         for (int id : ids)
             for (int other : ids)
                 if (other != id)
