@@ -8,6 +8,7 @@
 #include <iostream>
 #include <iterator>
 #include <limits>
+#include <map>
 #include <queue>
 #include <set>
 #include <stdexcept>
@@ -657,7 +658,7 @@ void markGridPaths(Grid &grid, const std::vector<Edge> &edges) {
 // Validates the infoGrid after markGridPaths has stamped EDGE indices:
 //  1. Every EDGE cell that has exactly 2 EDGE neighbours must share the same
 //     edge index with both of them (a cell can't be a junction between two
-//     distinct edges).
+//     distinct edges), unless those edges share a node.
 //  2. Every EDGE cell must appear in exactly one Edge::path (no cell claimed
 //     by multiple edges, and none encoded in the grid but absent from every
 //     path).
@@ -672,6 +673,12 @@ static void validateEdgeCells(const Grid &grid,
   const int cols = (rows > 0) ? static_cast<int>(grid[0].size()) : 0;
   const std::unordered_set<Point, GridType::PairHash> merged(
       mergedCells.begin(), mergedCells.end());
+  // Two arms of one node may touch at a corner (distance_map_graph.md DMG-16).
+  // A dead end's `to` indexes the dead ends, not the nodes.
+  const auto shareNode = [](const Edge &a, const Edge &b) {
+    return a.from == b.from || (!b.toDeadEnd && a.from == b.to) ||
+           (!a.toDeadEnd && (a.to == b.from || (!b.toDeadEnd && a.to == b.to)));
+  };
 
   // Build a map: cell -> list of edge indices whose path contains that cell.
   std::unordered_map<GridType::Point, std::vector<int>,
@@ -712,7 +719,7 @@ static void validateEdgeCells(const Grid &grid,
       }
 
       for (int i : neigbourEdgeIndices) {
-        if (i != edgeIdx) {
+        if (i != edgeIdx && !shareNode(edges[i], edges[edgeIdx])) {
           LOG_ERROR("VAL: EDGE cell (" << c << "," << r << ") idx=" << edgeIdx
                                        << " has neighbour edge: " << i);
         }
@@ -1536,6 +1543,106 @@ Grid rewriteInfoGrid(const Grid &grid, const std::vector<Edge> &edges) {
 }
 
 //
+// Join the parts of a split graph through orphan PATH cells, the cells in no
+// edge path (distance_map_graph.md DMG-15). A group beside nodes of two parts
+// gets one edge, by the shortest walk through the group. A group whose nodes
+// are all in one part is left alone, so a whole graph never changes here.
+//
+static void bridgeOrphanCells(std::vector<Edge> &baseEdges, const Grid &infoGrid,
+                              const Grid &floorGrid, int nodeCount) {
+  const int rows = static_cast<int>(infoGrid.size());
+  const int cols = static_cast<int>(infoGrid[0].size());
+
+  std::vector<int> part(nodeCount);
+  for (int i = 0; i < nodeCount; ++i)
+    part[i] = i;
+  const std::function<int(int)> root = [&](int i) {
+    return part[i] == i ? i : part[i] = root(part[i]);
+  };
+  std::unordered_set<Point, GridType::PairHash> edgeCells;
+  for (const Edge &e : baseEdges) {
+    if (!e.toDeadEnd)
+      part[root(e.from)] = root(e.to);
+    edgeCells.insert(e.path.begin(), e.path.end());
+  }
+  const auto isOrphan = [&](int x, int y) {
+    return infoGrid[y][x] == PATH && !edgeCells.count({x, y});
+  };
+  const auto inGrid = [&](int x, int y) {
+    return x >= 0 && y >= 0 && x < cols && y < rows;
+  };
+
+  std::vector<std::vector<bool>> grouped(rows, std::vector<bool>(cols, false));
+  for (int r0 = 0; r0 < rows; ++r0) {
+    for (int c0 = 0; c0 < cols; ++c0) {
+      if (!isOrphan(c0, r0) || grouped[r0][c0])
+        continue;
+      std::vector<Point> group{{c0, r0}};
+      grouped[r0][c0] = true;
+      std::set<std::pair<int, Point>> beside; // (node index, its cell), in order
+      for (std::size_t head = 0; head < group.size(); ++head) {
+        const auto [cx, cy] = group[head];
+        for (const auto &d : directions8) {
+          const int nx = cx + d.first, ny = cy + d.second;
+          if (!inGrid(nx, ny))
+            continue;
+          if (infoGrid[ny][nx] & NODE) {
+            beside.insert({infoGrid[ny][nx] & 0xffff, {nx, ny}});
+          } else if (isOrphan(nx, ny) && !grouped[ny][nx]) {
+            grouped[ny][nx] = true;
+            group.push_back({nx, ny});
+          }
+        }
+      }
+      if (beside.empty())
+        continue;
+
+      // Breadth-first through the group, from the first node to the nearest
+      // node of another part.
+      const auto [from, fromCell] = *beside.begin();
+      std::map<Point, Point> cameFrom;
+      std::queue<Point> queue;
+      queue.push(fromCell);
+      Path path;
+      int to = -1;
+      while (!queue.empty() && to < 0) {
+        const Point at = queue.front();
+        queue.pop();
+        for (const auto &d : directions8) {
+          const Point next{at.first + d.first, at.second + d.second};
+          if (!inGrid(next.first, next.second))
+            continue;
+          const int cell = infoGrid[next.second][next.first];
+          if (at != fromCell && (cell & NODE) && root(cell & 0xffff) != root(from)) {
+            to = cell & 0xffff;
+            path.push_back(next);
+            for (Point p = at; p != fromCell; p = cameFrom[p])
+              path.push_back(p);
+            path.push_back(fromCell);
+            break;
+          }
+          if (isOrphan(next.first, next.second) && !cameFrom.count(next)) {
+            cameFrom[next] = at;
+            queue.push(next);
+          }
+        }
+      }
+      if (to < 0)
+        continue; // all one part: a cut corner, as detectLoopEdges calls it
+
+      if (from < to)
+        std::reverse(path.begin(), path.end());
+      LOG_INFO("  Orphan bridge " << std::min(from, to) << "->" << std::max(from, to)
+                                  << " cells: " << path.size());
+      baseEdges.push_back({std::min(from, to), std::max(from, to), false,
+                           simplifyPath(path, floorGrid)});
+      part[root(from)] = root(to);
+      edgeCells.insert(path.begin(), path.end());
+    }
+  }
+}
+
+//
 // Unfortunately there are a few scenarios that dont connect. Basically
 // some places aren't marked as nodes (some areas where "double/triple thick"
 // This allows a path between A and B that bypasses C, but marks the
@@ -1567,6 +1674,15 @@ BaseGraph fixBaseEdges(std::vector<Edge> &baseEdges, const Grid &infoGrid,
     return baseGraph;
   }
   LOG_INFO("  Unconnected nodes: " << unconnected.size());
+
+  // The walk below cannot cross a group of orphan cells: join through them first.
+  bridgeOrphanCells(baseEdges, infoGrid, floorGrid, static_cast<int>(baseNodes.size()));
+  baseGraph = GridType::buildBaseGraph(baseEdges, baseNodes.size());
+  unconnected = GridType::checkConnectivity(baseGraph, baseNodes.size());
+  if (unconnected.empty()) {
+    return baseGraph;
+  }
+  LOG_INFO("  Still unconnected nodes: " << unconnected.size());
 
   // Turn list of unconnected node indexes to list of Nodes
   std::vector<Point> unconnectedNodes;
