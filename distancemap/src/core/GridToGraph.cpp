@@ -1643,6 +1643,101 @@ static void bridgeOrphanCells(std::vector<Edge> &baseEdges, const Grid &infoGrid
 }
 
 //
+// Join what orphan cells could not, by the shortest floor walk over cells no
+// edge holds, without cutting a wall corner (distance_map_graph.md DMG-17).
+//
+static void bridgeOverFloor(std::vector<Edge> &baseEdges, const Grid &infoGrid,
+                            const Grid &floorGrid, const std::vector<Point> &nodes) {
+  const int rows = static_cast<int>(infoGrid.size());
+  const int cols = static_cast<int>(infoGrid[0].size());
+  const int nodeCount = static_cast<int>(nodes.size());
+
+  std::vector<int> part(nodeCount);
+  for (int i = 0; i < nodeCount; ++i)
+    part[i] = i;
+  const std::function<int(int)> root = [&](int i) {
+    return part[i] == i ? i : part[i] = root(part[i]);
+  };
+  std::unordered_set<Point, GridType::PairHash> edgeCells;
+  for (const Edge &e : baseEdges) {
+    if (!e.toDeadEnd)
+      part[root(e.from)] = root(e.to);
+    edgeCells.insert(e.path.begin(), e.path.end());
+  }
+  const auto isFloor = [&](int x, int y) {
+    return x >= 0 && y >= 0 && x < cols && y < rows && floorGrid[y][x] != 0;
+  };
+
+  // The largest part is the graph; every other part walks to any other part.
+  std::vector<int> sizes(nodeCount, 0);
+  for (int i = 0; i < nodeCount; ++i)
+    ++sizes[root(i)];
+  const int mainPart = static_cast<int>(
+      std::max_element(sizes.begin(), sizes.end()) - sizes.begin());
+
+  std::set<int> partsLeft;
+  for (int i = 0; i < nodeCount; ++i)
+    if (root(i) != root(mainPart))
+      partsLeft.insert(root(i));
+
+  for (const int startPart : partsLeft) {
+    if (root(startPart) == root(mainPart))
+      continue;
+    std::map<Point, Point> cameFrom;
+    std::queue<Point> queue;
+    for (int i = 0; i < nodeCount; ++i)
+      if (root(i) == root(startPart)) {
+        cameFrom[nodes[i]] = nodes[i];
+        queue.push(nodes[i]);
+      }
+    int to = -1;
+    Point last{-1, -1};
+    while (!queue.empty() && to < 0) {
+      const Point at = queue.front();
+      queue.pop();
+      for (const auto &d : directions8) {
+        const int nx = at.first + d.first, ny = at.second + d.second;
+        if (!isFloor(nx, ny))
+          continue;
+        if (d.first != 0 && d.second != 0 &&
+            (!isFloor(at.first + d.first, at.second) ||
+             !isFloor(at.first, at.second + d.second)))
+          continue;
+        const Point next{nx, ny};
+        const int cell = infoGrid[ny][nx];
+        if ((cell & NODE) && root(cell & 0xffff) != root(startPart)) {
+          to = cell & 0xffff;
+          last = at;
+          break;
+        }
+        if ((cell & (NODE | DEND)) || edgeCells.count(next) || cameFrom.count(next))
+          continue;
+        cameFrom[next] = at;
+        queue.push(next);
+      }
+    }
+    if (to < 0)
+      continue; // no such walk: findNodeEdges still has its try
+
+    Path path{nodes[to]};
+    Point p = last;
+    while (cameFrom[p] != p) {
+      path.push_back(p);
+      p = cameFrom[p];
+    }
+    path.push_back(p); // the start part's node
+    const int from = infoGrid[p.second][p.first] & 0xffff;
+    if (from < to)
+      std::reverse(path.begin(), path.end());
+    LOG_INFO("  Floor bridge " << std::min(from, to) << "->" << std::max(from, to)
+                               << " cells: " << path.size());
+    baseEdges.push_back({std::min(from, to), std::max(from, to), false, path});
+    part[root(from)] = root(to);
+    edgeCells.insert(path.begin(), path.end());
+  }
+}
+
+//
 // Unfortunately there are a few scenarios that dont connect. Basically
 // some places aren't marked as nodes (some areas where "double/triple thick"
 // This allows a path between A and B that bypasses C, but marks the
@@ -1683,6 +1778,14 @@ BaseGraph fixBaseEdges(std::vector<Edge> &baseEdges, const Grid &infoGrid,
     return baseGraph;
   }
   LOG_INFO("  Still unconnected nodes: " << unconnected.size());
+
+  bridgeOverFloor(baseEdges, infoGrid, floorGrid, baseNodes);
+  baseGraph = GridType::buildBaseGraph(baseEdges, baseNodes.size());
+  unconnected = GridType::checkConnectivity(baseGraph, baseNodes.size());
+  if (unconnected.empty()) {
+    return baseGraph;
+  }
+  LOG_INFO("  Still unconnected after the floor walk: " << unconnected.size());
 
   // Turn list of unconnected node indexes to list of Nodes
   std::vector<Point> unconnectedNodes;
